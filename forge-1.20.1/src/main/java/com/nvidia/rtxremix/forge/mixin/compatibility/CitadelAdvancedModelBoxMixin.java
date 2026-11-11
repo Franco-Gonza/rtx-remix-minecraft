@@ -5,6 +5,7 @@
 package com.nvidia.rtxremix.forge.mixin.compatibility;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.nvidia.rtxremix.forge.entity.EntityRenderContext;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
@@ -28,7 +29,7 @@ public abstract class CitadelAdvancedModelBoxMixin {
     )
     private void rtxremix$trackCitadelBox(
             PoseStack poseStack,
-            Object vertexConsumer,
+            VertexConsumer vertexConsumer,
             int packedLight,
             int packedOverlay,
             float red, float green, float blue, float alpha,
