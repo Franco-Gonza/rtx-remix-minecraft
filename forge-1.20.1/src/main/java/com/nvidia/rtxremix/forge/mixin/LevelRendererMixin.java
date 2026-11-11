@@ -1,0 +1,33 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+package com.nvidia.rtxremix.forge.mixin;
+
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.nvidia.rtxremix.forge.client.ForgeRemixRenderer;
+import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.RenderType;
+import org.joml.Matrix4f;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+/**
+ * Intercepts vanilla chunk layer rasterization in Forge 1.20.1 to skip redundant OpenGL draws
+ * when RTX Remix path tracing owns the terrain.
+ */
+@Mixin(LevelRenderer.class)
+public abstract class LevelRendererMixin {
+
+    @Inject(method = "renderChunkLayer", at = @At("HEAD"), cancellable = true)
+    private void rtxremix$skipVanillaTerrainLayer(
+            RenderType renderType, PoseStack poseStack,
+            double camX, double camY, double camZ,
+            Matrix4f projectionMatrix, CallbackInfo ci) {
+        if (ForgeRemixRenderer.isRtxEnabled()) {
+            ci.cancel();
+        }
+    }
+}

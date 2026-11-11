@@ -29,6 +29,8 @@ public final class ForgeRemixRenderer {
     private static final ForgeRemixRenderer INSTANCE = new ForgeRemixRenderer();
 
     private final Minecraft client = Minecraft.getInstance();
+    private final com.nvidia.rtxremix.forge.sky.SkyRenderer skyRenderer = new com.nvidia.rtxremix.forge.sky.SkyRenderer();
+    private final java.util.List<com.nvidia.rtxremix.forge.terrain.capture.BlockDataQueue.QueuedCapture> drainedCaptures = new java.util.ArrayList<>();
     private RemixAPI api;
     private GlInterop interop;
     private TextureOverlay overlay;
@@ -41,6 +43,14 @@ public final class ForgeRemixRenderer {
 
     public static ForgeRemixRenderer getInstance() {
         return INSTANCE;
+    }
+
+    public static boolean isRtxEnabled() {
+        return INSTANCE.active && INSTANCE.initialized && INSTANCE.api != null;
+    }
+
+    public com.nvidia.rtxremix.forge.sky.SkyRenderer getSkyRenderer() {
+        return skyRenderer;
     }
 
     public synchronized boolean initializeIfSupported() {
@@ -111,13 +121,25 @@ public final class ForgeRemixRenderer {
         float yaw = camera.getYRot();
         float pitch = camera.getXRot();
 
-        // Setup camera info in Remix
+        if (client.level != null) {
+            skyRenderer.render(api, client.level, pos, partialTicks);
+        }
     }
 
     public void submitScene() {
         if (!isInitialized() || !active) return;
 
         try {
+            // Drain captured block terrain data
+            drainedCaptures.clear();
+            com.nvidia.rtxremix.forge.terrain.capture.BlockDataQueue.drain(drainedCaptures);
+            for (com.nvidia.rtxremix.forge.terrain.capture.BlockDataQueue.QueuedCapture capture : drainedCaptures) {
+                if (capture != null && capture.data() != null && capture.data().meshData() != null) {
+                    capture.data().meshData().release();
+                }
+            }
+            drainedCaptures.clear();
+
             // Check interop images and draw overlay
             if (interop != null && interop.getTexture() > 0) {
                 overlay.render(interop.getTexture());
