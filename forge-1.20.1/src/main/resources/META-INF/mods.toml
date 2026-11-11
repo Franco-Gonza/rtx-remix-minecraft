@@ -1,0 +1,29 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="Apache-2.0"
+issueTrackerURL="https://github.com/Franco-Gonza/rtx-remix-minecraft/issues"
+
+[[mods]]
+modId="rtxremix"
+version="${file.jarVersion}"
+displayName="NVIDIA RTX Remix"
+authors="NVIDIA Corporation & Franco-Gonza"
+description='''Path-traced Minecraft Java 1.20.1 through NVIDIA RTX Remix: real-time ray tracing, DLSS 3.5, and physically based rendering.'''
+logoFile="logo.png"
+
+[[mixins]]
+config="rtxremix.mixins.json"
+
+[[dependencies.rtxremix]]
+    modId="forge"
+    mandatory=true
+    versionRange="[47.3.0,)"
+    ordering="NONE"
+    side="CLIENT"
+
+[[dependencies.rtxremix]]
+    modId="minecraft"
+    mandatory=true
+    versionRange="[1.20.1,1.21)"
+    ordering="NONE"
+    side="CLIENT"
