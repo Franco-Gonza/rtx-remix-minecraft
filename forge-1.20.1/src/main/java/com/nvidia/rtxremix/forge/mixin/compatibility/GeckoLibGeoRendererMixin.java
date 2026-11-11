@@ -18,24 +18,25 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * so RTX Remix creates retained rigid instances instead of CPU vertex recomputation.
  */
 @Pseudo
-@Mixin(targets = "software.bernie.geckolib.renderer.GeoRenderer", remap = false)
+@Mixin(
+        targets = {
+                "software.bernie.geckolib.renderer.GeoEntityRenderer",
+                "software.bernie.geckolib.renderer.GeoReplacedEntityRenderer"
+        },
+        remap = false
+)
 public abstract class GeckoLibGeoRendererMixin {
 
     @Inject(
-            method = "renderRecursively",
+            method = "renderCubesOfBone(Lcom/mojang/blaze3d/vertex/PoseStack;Lsoftware/bernie/geckolib/cache/object/GeoBone;Lcom/mojang/blaze3d/vertex/VertexConsumer;IIFFFF)V",
             at = @At("HEAD"),
             remap = false,
             require = 0
     )
     private void rtxremix$trackGeckoLibBone(
             PoseStack poseStack,
-            Object animatable,
             Object bone,
-            Object renderType,
-            Object bufferSource,
             Object buffer,
-            boolean isReRender,
-            float partialTick,
             int packedLight,
             int packedOverlay,
             float red, float green, float blue, float alpha,
