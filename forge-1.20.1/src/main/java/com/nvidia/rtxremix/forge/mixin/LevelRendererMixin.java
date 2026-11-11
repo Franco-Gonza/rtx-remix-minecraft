@@ -30,4 +30,19 @@ public abstract class LevelRendererMixin {
             ci.cancel();
         }
     }
+
+    @Inject(method = "renderEntity", at = @At("HEAD"), cancellable = true)
+    private void rtxremix$captureEntityInPlace(
+            net.minecraft.world.entity.Entity entity,
+            double camX, double camY, double camZ,
+            float tickDelta, PoseStack poseStack,
+            net.minecraft.client.renderer.MultiBufferSource bufferSource,
+            CallbackInfo ci) {
+        if (ForgeRemixRenderer.isRtxEnabled()) {
+            ForgeRemixRenderer renderer = ForgeRemixRenderer.getInstance();
+            if (renderer != null && renderer.renderEntityInPlace(entity, tickDelta)) {
+                ci.cancel();
+            }
+        }
+    }
 }

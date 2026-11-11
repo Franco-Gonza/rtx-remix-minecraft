@@ -30,10 +30,13 @@ public final class ForgeRemixRenderer {
 
     private final Minecraft client = Minecraft.getInstance();
     private final com.nvidia.rtxremix.forge.sky.SkyRenderer skyRenderer = new com.nvidia.rtxremix.forge.sky.SkyRenderer();
+    private final com.nvidia.rtxremix.forge.logic.ConfLayerDriver confLayerDriver = new com.nvidia.rtxremix.forge.logic.ConfLayerDriver();
     private final java.util.List<com.nvidia.rtxremix.forge.terrain.capture.BlockDataQueue.QueuedCapture> drainedCaptures = new java.util.ArrayList<>();
     private RemixAPI api;
     private GlInterop interop;
     private TextureOverlay overlay;
+    private com.nvidia.rtxremix.forge.entity.RemixEntitySubmitter entitySubmitter;
+    private com.nvidia.rtxremix.forge.entity.RemixEntityPass entityPass;
 
     private boolean initialized = false;
     private boolean active = false;
@@ -89,6 +92,9 @@ public final class ForgeRemixRenderer {
 
             api.startup(startup);
             overlay = new TextureOverlay();
+            entitySubmitter = new com.nvidia.rtxremix.forge.entity.RemixEntitySubmitter(api);
+            entityPass = new com.nvidia.rtxremix.forge.entity.RemixEntityPass();
+            confLayerDriver.acquireAll(api, net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get());
             active = true;
             LOGGER.info("NVIDIA RTX Remix initialized successfully on Forge 1.20.1.");
             return true;
@@ -116,14 +122,25 @@ public final class ForgeRemixRenderer {
         if (!isInitialized() || !active) return;
 
         frameIndex++;
-        // Update camera pose
         Vec3 pos = camera.getPosition();
-        float yaw = camera.getYRot();
-        float pitch = camera.getXRot();
 
         if (client.level != null) {
             skyRenderer.render(api, client.level, pos, partialTicks);
+            boolean isUnderwater = camera.getFluidInCamera() == net.minecraft.world.level.material.FogType.WATER;
+            confLayerDriver.update(client.level, pos, isUnderwater, 1.0f / 60.0f);
         }
+    }
+
+    public boolean renderEntityInPlace(net.minecraft.world.entity.Entity entity, float tickDelta) {
+        if (!isRtxEnabled() || entityPass == null || entitySubmitter == null) {
+            return false;
+        }
+        if (client == null || client.getEntityRenderDispatcher() == null) {
+            return false;
+        }
+        entityPass.beginFrame(entitySubmitter);
+        entityPass.captureAndSubmit(entity, client.getEntityRenderDispatcher(), tickDelta, entitySubmitter);
+        return true;
     }
 
     public void submitScene() {
@@ -139,6 +156,12 @@ public final class ForgeRemixRenderer {
                 }
             }
             drainedCaptures.clear();
+
+            // Finish entity pass and sweep off-screen shadow casters
+            if (entityPass != null && entitySubmitter != null && client.level != null
+                    && client.gameRenderer != null && client.gameRenderer.getMainCamera() != null) {
+                entityPass.finishFrame(client.level, client.getEntityRenderDispatcher(), 1.0f, entitySubmitter, client.gameRenderer.getMainCamera());
+            }
 
             // Check interop images and draw overlay
             if (interop != null && interop.getTexture() > 0) {
@@ -162,6 +185,13 @@ public final class ForgeRemixRenderer {
     }
 
     public void destroy() {
+        if (entitySubmitter != null) {
+            entitySubmitter.destroy();
+            entitySubmitter = null;
+        }
+        if (confLayerDriver != null) {
+            confLayerDriver.releaseAll();
+        }
         if (interop != null) {
             interop.destroy();
             interop = null;

@@ -1,0 +1,136 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+package com.nvidia.rtxremix.forge.entity;
+
+import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.client.Camera;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.LightTexture;
+import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.Vec3;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+/**
+ * Coordinates entity capture for RTX Remix path tracing.
+ */
+public class RemixEntityPass {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(RemixEntityPass.class);
+    private static final int MAX_ENTITIES_PER_FRAME = 256;
+    private static final double MAX_SWEEP_DISTANCE_SQ = 128.0 * 128.0;
+
+    private final RemixVertexConsumerProvider provider = new RemixVertexConsumerProvider();
+    private final Set<Integer> capturedEntityIds = new HashSet<>(MAX_ENTITIES_PER_FRAME);
+
+    private boolean frameActive = false;
+    private float[] reusableBoneData = new float[0];
+
+    public void beginFrame(RemixEntitySubmitter submitter) {
+        if (frameActive) return;
+        frameActive = true;
+        capturedEntityIds.clear();
+        submitter.beginFrame();
+    }
+
+    public void resetFrame() {
+        frameActive = false;
+        capturedEntityIds.clear();
+    }
+
+    public boolean captureAndSubmit(Entity entity, EntityRenderDispatcher dispatcher,
+                                    float tickDelta, RemixEntitySubmitter submitter) {
+        if (!capturedEntityIds.add(entity.getId())) {
+            return false;
+        }
+
+        boolean prevShadow = dispatcher.shouldRenderHitBoxes(); // proxy for render shadow check
+        dispatcher.setRenderShadow(false);
+
+        EntityCaptureResult result;
+        try {
+            result = renderOneEntity(entity, dispatcher, tickDelta);
+        } catch (Exception e) {
+            LOGGER.error("Error capturing entity {}: {}", entity.getType(), e.getMessage());
+            return true;
+        } finally {
+            dispatcher.setRenderShadow(true);
+        }
+
+        if (result != null) {
+            submitter.submitEntity(result, Vec3.ZERO);
+        }
+        return true;
+    }
+
+    private EntityCaptureResult renderOneEntity(Entity entity, EntityRenderDispatcher dispatcher, float tickDelta) {
+        Vec3 entityPos = entity.getPosition(tickDelta);
+        float yaw = Mth.lerp(tickDelta, entity.yRotO, entity.getYRot());
+
+        provider.beginEntity();
+        EntityRenderContext ctx = EntityRenderContext.get();
+        ctx.begin(true);
+
+        PoseStack poseStack = new PoseStack();
+        try {
+            dispatcher.render(entity, 0.0, 0.0, 0.0, yaw, tickDelta, poseStack, provider, LightTexture.FULL_BRIGHT);
+        } finally {
+            ctx.reset();
+        }
+
+        List<RemixVertexConsumerProvider.CapturedLayer> layers = provider.endEntity();
+        if (layers.isEmpty()) {
+            return null;
+        }
+
+        reusableBoneData = ctx.snapshotBoneTransforms(reusableBoneData);
+        int boneCount = ctx.getBoneCount();
+        String typeKey = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString();
+
+        Minecraft client = Minecraft.getInstance();
+        boolean isFirstPerson = entity == client.player && client.options.getCameraType().isFirstPerson();
+
+        return new EntityCaptureResult(
+                entity,
+                entityPos,
+                yaw,
+                layers,
+                reusableBoneData,
+                boneCount,
+                typeKey,
+                isFirstPerson
+        );
+    }
+
+    public void finishFrame(ClientLevel level, EntityRenderDispatcher dispatcher,
+                            float tickDelta, RemixEntitySubmitter submitter, Camera camera) {
+        if (!frameActive) return;
+
+        if (level != null && camera != null && capturedEntityIds.size() < MAX_ENTITIES_PER_FRAME) {
+            Vec3 camPos = camera.getPosition();
+            for (Entity entity : level.entitiesForRendering()) {
+                if (capturedEntityIds.size() >= MAX_ENTITIES_PER_FRAME) {
+                    break;
+                }
+                if (!capturedEntityIds.contains(entity.getId())) {
+                    if (entity.distanceToSqr(camPos) <= MAX_SWEEP_DISTANCE_SQ) {
+                        captureAndSubmit(entity, dispatcher, tickDelta, submitter);
+                    }
+                }
+            }
+        }
+
+        submitter.endFrame();
+        frameActive = false;
+    }
+}

@@ -9,7 +9,9 @@
         "RenderSystemMixin",
         "GameRendererMixin",
         "ChunkRenderDispatcherRebuildTaskMixin",
-        "LevelRendererMixin"
+        "LevelRendererMixin",
+        "compatibility.GeckoLibGeoRendererMixin",
+        "compatibility.CitadelAdvancedModelBoxMixin"
     ],
     "injectors": {
         "defaultRequire": 1
