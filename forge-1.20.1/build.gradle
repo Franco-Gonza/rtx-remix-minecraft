@@ -112,3 +112,56 @@ jar {
 }
 
 jar.finalizedBy('reobfJar')
+
+tasks.register('packageDistJar', Zip) {
+    group = 'build'
+    description = 'Assembles the reobfuscated Forge 1.20.1 JAR with the bundled native runtime'
+    dependsOn 'jar', 'reobfJar'
+
+    archiveBaseName = 'rtx-remix-forge-1.20.1'
+    archiveVersion = project.version.toString()
+    archiveExtension = 'jar'
+    destinationDirectory = layout.buildDirectory.dir('distributions')
+
+    from(zipTree(jar.archiveFile))
+
+    from('../packaging/licenses') {
+        into 'native/licenses'
+    }
+    from('../packaging/rtx.conf') {
+        into 'native'
+    }
+    from('../remix-runtime/native/rtx-remix') {
+        into 'native/rtx-remix'
+    }
+    from('../remix-runtime/native/textures') {
+        into 'native/textures'
+    }
+    from('../remix-runtime/native/remix-sdk-win64') {
+        into 'native/remix-sdk'
+        exclude '**/*.pdb'
+    }
+}
+
+tasks.register('packageForge', Zip) {
+    group = 'build'
+    description = 'Assembles the complete Forge 1.20.1 distribution bundle'
+    dependsOn 'packageDistJar'
+
+    archiveBaseName = 'rtx-remix-forge-1.20.1'
+    archiveClassifier = 'bundle'
+    destinationDirectory = layout.buildDirectory.dir('distributions')
+
+    from(tasks.named('packageDistJar').flatMap { it.archiveFile }) {
+        into 'mods'
+    }
+    from('../packaging/INSTALL.md') {
+        into ''
+    }
+    from('../packaging/install.bat') {
+        into ''
+    }
+    from('../packaging/installer.ps1') {
+        into ''
+    }
+}
