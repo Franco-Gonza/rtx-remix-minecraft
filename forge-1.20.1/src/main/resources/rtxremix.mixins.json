@@ -6,7 +6,8 @@
     "refmap": "rtxremix.refmap.json",
     "mixins": [],
     "client": [
-        "WindowMixin"
+        "RenderSystemMixin",
+        "GameRendererMixin"
     ],
     "injectors": {
         "defaultRequire": 1
