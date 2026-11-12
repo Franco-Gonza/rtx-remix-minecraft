@@ -6,8 +6,8 @@ package com.nvidia.rtxremix.forge.texture;
 
 import net.minecraft.resources.ResourceLocation;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Manages per-sprite textures, material categories, and PBR mappings for RTX Remix terrain on Forge 1.20.1.
@@ -30,7 +30,7 @@ public class BlockTextureManager {
     }
 
     private static BlockTextureManager INSTANCE = new BlockTextureManager();
-    private final Map<ResourceLocation, SpriteEntry> spriteById = new HashMap<>();
+    private final Map<ResourceLocation, SpriteEntry> spriteById = new ConcurrentHashMap<>();
 
     public BlockTextureManager() {
         INSTANCE = this;
