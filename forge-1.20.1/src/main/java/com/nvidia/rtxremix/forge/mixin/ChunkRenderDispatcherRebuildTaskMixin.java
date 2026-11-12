@@ -38,7 +38,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(targets = "net.minecraft.client.renderer.chunk.ChunkRenderDispatcher$RenderChunk$RebuildTask")
 public abstract class ChunkRenderDispatcherRebuildTaskMixin {
 
-    @Shadow(remap = false) @Final
+    @Shadow(aliases = {"f_112859_", "this$1"}) @Final
     ChunkRenderDispatcher.RenderChunk this$1;
 
     @Shadow
