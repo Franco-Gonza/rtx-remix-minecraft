@@ -26,7 +26,7 @@ public abstract class LevelRendererMixin {
             RenderType renderType, PoseStack poseStack,
             double camX, double camY, double camZ,
             Matrix4f projectionMatrix, CallbackInfo ci) {
-        if (ForgeRemixRenderer.isRtxEnabled()) {
+        if (ForgeRemixRenderer.isRtxEnabled() && ForgeRemixRenderer.getInstance().hasTerrainMeshes()) {
             ci.cancel();
         }
     }

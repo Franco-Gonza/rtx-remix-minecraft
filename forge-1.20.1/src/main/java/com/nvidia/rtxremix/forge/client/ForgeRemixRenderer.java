@@ -4,16 +4,14 @@
  */
 package com.nvidia.rtxremix.forge.client;
 
-import com.nvidia.rtxremix.CameraInfo;
-import com.nvidia.rtxremix.CameraType;
-import com.nvidia.rtxremix.PresentInfo;
-import com.nvidia.rtxremix.RemixAPI;
-import com.nvidia.rtxremix.RemixException;
-import com.nvidia.rtxremix.StartupInfo;
+import com.nvidia.rtxremix.*;
 import com.nvidia.rtxremix.forge.gl.GlInterop;
 import com.nvidia.rtxremix.forge.gl.TextureOverlay;
+import com.nvidia.rtxremix.forge.terrain.capture.SectionBlockData;
+import com.nvidia.rtxremix.forge.terrain.capture.SectionMeshData;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.SectionPos;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFWNativeWin32;
@@ -137,16 +135,78 @@ public final class ForgeRemixRenderer {
         this.active = active;
     }
 
+    private final java.util.Map<SectionPos, Long> sectionInstances = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<SectionPos, java.util.List<Long>> sectionMeshes = new java.util.concurrent.ConcurrentHashMap<>();
+
+    public boolean hasTerrainMeshes() {
+        return !sectionInstances.isEmpty();
+    }
+
     public void beginFrame(Camera camera, float partialTicks) {
         if (!isInitialized() || !active) return;
 
         frameIndex++;
         Vec3 pos = camera.getPosition();
+        updateCamera(camera, partialTicks);
 
         if (client.level != null) {
             skyRenderer.render(api, client.level, pos, partialTicks);
             boolean isUnderwater = camera.getFluidInCamera() == net.minecraft.world.level.material.FogType.WATER;
             confLayerDriver.update(client.level, pos, isUnderwater, 1.0f / 60.0f);
+        }
+    }
+
+    private void updateCamera(Camera camera, float tickDelta) {
+        try {
+            Vec3 pos = camera.getPosition();
+            float pitch = camera.getXRot();
+            float yaw = camera.getYRot();
+
+            float yawRad = (float) Math.toRadians(-yaw);
+            float pitchRad = (float) Math.toRadians(pitch);
+
+            float forwardX = (float) (Math.sin(yawRad) * Math.cos(pitchRad));
+            float forwardY = (float) (-Math.sin(pitchRad));
+            float forwardZ = (float) (Math.cos(yawRad) * Math.cos(pitchRad));
+
+            float rightX = (float) (-Math.cos(yawRad));
+            float rightY = 0.0f;
+            float rightZ = (float) (Math.sin(yawRad));
+
+            float upX = rightY * forwardZ - rightZ * forwardY;
+            float upY = rightZ * forwardX - rightX * forwardZ;
+            float upZ = rightX * forwardY - rightY * forwardX;
+
+            float worldFov = client.options.fov().get().floatValue();
+            int width = Math.max(1, client.getWindow().getWidth());
+            int height = Math.max(1, client.getWindow().getHeight());
+            float aspect = (float) width / (float) height;
+
+            CameraInfoParameterizedEXT worldCameraParams = CameraInfoParameterizedEXT.builder()
+                .position((float) pos.x, (float) pos.y, (float) pos.z)
+                .forward(forwardX, forwardY, forwardZ)
+                .up(upX, upY, upZ)
+                .right(rightX, rightY, rightZ)
+                .fovYInDegrees(worldFov)
+                .aspect(aspect)
+                .nearPlane(0.05f)
+                .farPlane(1000.0f)
+                .build();
+
+            CameraInfo worldCameraInfo = CameraInfo.builder()
+                .type(CameraType.WORLD)
+                .parameterizedExt(worldCameraParams)
+                .build();
+
+            CameraInfo viewModelCameraInfo = CameraInfo.builder()
+                .type(CameraType.VIEW_MODEL)
+                .parameterizedExt(worldCameraParams)
+                .build();
+
+            api.setupCamera(worldCameraInfo);
+            api.setupCamera(viewModelCameraInfo);
+        } catch (Exception e) {
+            LOGGER.error("Error updating camera in Remix: {}", e.getMessage(), e);
         }
     }
 
@@ -166,13 +226,88 @@ public final class ForgeRemixRenderer {
         if (!isInitialized() || !active) return;
 
         try {
-            // Drain captured block terrain data
+            // Drain captured block terrain data and submit to Remix
             drainedCaptures.clear();
             com.nvidia.rtxremix.forge.terrain.capture.BlockDataQueue.drain(drainedCaptures);
             for (com.nvidia.rtxremix.forge.terrain.capture.BlockDataQueue.QueuedCapture capture : drainedCaptures) {
-                if (capture != null && capture.data() != null && capture.data().meshData() != null) {
-                    capture.data().meshData().release();
+                if (capture == null || capture.data() == null) continue;
+                SectionBlockData blockData = capture.data();
+                SectionMeshData meshData = blockData.meshData();
+                if (meshData == null) continue;
+
+                SectionPos pos = blockData.sectionPos();
+
+                // Clean up previous instance and meshes for this section
+                Long oldInstance = sectionInstances.remove(pos);
+                if (oldInstance != null && oldInstance != 0) {
+                    try { api.sceneInstanceRemove(oldInstance); } catch (Exception ignored) {}
                 }
+                java.util.List<Long> oldMeshes = sectionMeshes.remove(pos);
+                if (oldMeshes != null) {
+                    for (Long m : oldMeshes) {
+                        if (m != null && m != 0) {
+                            try { api.destroyMesh(m); } catch (Exception ignored) {}
+                        }
+                    }
+                }
+
+                if (!meshData.isEmpty()) {
+                    java.util.List<Long> newMeshes = new java.util.ArrayList<>();
+                    Transform sectionTransform = new Transform();
+                    sectionTransform.setTranslation(pos.minBlockX(), pos.minBlockY(), pos.minBlockZ());
+
+                    for (SectionMeshData.Surface surface : meshData.surfaces()) {
+                        int vCount = surface.vertexCount();
+                        int iCount = surface.indexCount();
+                        if (vCount <= 0 || iCount <= 0) continue;
+
+                        java.nio.ByteBuffer vBuf = surface.vertexBuffer();
+                        java.nio.ByteBuffer iBuf = com.nvidia.rtxremix.forge.util.DirectBufferPool.acquire(iCount * Integer.BYTES);
+                        try {
+                            int quads = vCount / 4;
+                            for (int q = 0; q < quads; q++) {
+                                int base = q * 4;
+                                iBuf.putInt(base);
+                                iBuf.putInt(base + 1);
+                                iBuf.putInt(base + 2);
+                                iBuf.putInt(base);
+                                iBuf.putInt(base + 2);
+                                iBuf.putInt(base + 3);
+                            }
+                            iBuf.flip();
+
+                            MeshInfoSurfaceTriangles surf = new MeshInfoSurfaceTriangles();
+                            surf.vertexBuffer = vBuf;
+                            surf.vertexCount = vCount;
+                            surf.indexBuffer = iBuf;
+                            surf.indexCount = iCount;
+                            surf.material = 0;
+
+                            long hash = (((long) pos.hashCode()) << 32) ^ surface.category() ^ vCount;
+                            MeshInfo mi = MeshInfo.builder()
+                                    .hash(hash)
+                                    .surfaces(surf)
+                                    .build();
+
+                            long mHandle = api.createMesh(mi);
+                            if (mHandle != 0) {
+                                newMeshes.add(mHandle);
+                                long instHandle = api.sceneInstanceAdd(mHandle, sectionTransform.matrix, InstanceCategoryBit.WORLD_UI, 0, 0);
+                                if (instHandle != 0) {
+                                    sectionInstances.put(pos, instHandle);
+                                }
+                            }
+                        } catch (Exception e) {
+                            LOGGER.error("Failed creating terrain mesh for section {}", pos, e);
+                        } finally {
+                            com.nvidia.rtxremix.forge.util.DirectBufferPool.release(iBuf);
+                        }
+                    }
+                    if (!newMeshes.isEmpty()) {
+                        sectionMeshes.put(pos, newMeshes);
+                    }
+                }
+                meshData.release();
             }
             drainedCaptures.clear();
 
