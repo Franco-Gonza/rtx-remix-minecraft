@@ -46,6 +46,7 @@ public final class ClientEvents {
     @SubscribeEvent
     public void onPlayerLogout(ClientPlayerNetworkEvent.LoggingOut event) {
         LOGGER.info("Player disconnected from level. Tearing down RTX Remix world state...");
+        ForgeRemixRenderer.getInstance().clearLevelState();
     }
 
     @SubscribeEvent

@@ -31,7 +31,11 @@ public final class SectionMeshData {
         int vertexCount,
         int indexCount,
         boolean canonicalQuadIndices
-    ) {}
+    ) {
+        public String key() {
+            return bucketKey;
+        }
+    }
 
     private final List<Surface> surfaces;
     private final int cachedHash;

@@ -10,10 +10,11 @@ import com.nvidia.rtxremix.LightInfoDistantEXT;
 import com.nvidia.rtxremix.LightInfoDomeEXT;
 import com.nvidia.rtxremix.LightInfoRectEXT;
 import com.nvidia.rtxremix.RemixAPI;
+import com.nvidia.rtxremix.TextureBatchEntry;
 import com.nvidia.rtxremix.TextureFormat;
 import com.nvidia.rtxremix.TextureFromMemoryInfo;
-import com.nvidia.rtxremix.forge.client.ForgeRemixRenderer;
-import net.minecraft.client.Minecraft;
+import com.nvidia.rtxremix.TexturePatch;
+import com.nvidia.rtxremix.TexturePatchInfo;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.DimensionSpecialEffects;
 import net.minecraft.core.BlockPos;
@@ -49,11 +50,23 @@ public class SkyRenderer {
     private final AtmosphericSkyGenerator atmosphericGenerator = new AtmosphericSkyGenerator();
     private final float[] atmosphericMean = new float[3];
 
+    private final TexturePatch atmosphericTexturePatch = new TexturePatch();
+    private final TextureBatchEntry atmosphericTextureEntry = new TextureBatchEntry();
+    private final TexturePatchInfo atmosphericTextureUpdate = new TexturePatchInfo();
+
     private long skyTextureHandle = 0;
     private long skyDomeLightHandle = 0;
     private long skyAmbientRectHandle = 0;
+    private long sunLightHandle = 0;
 
-    public SkyRenderer() {}
+    public SkyRenderer() {
+        atmosphericTexturePatch.width = AtmosphericSkyGenerator.WIDTH;
+        atmosphericTexturePatch.height = AtmosphericSkyGenerator.HEIGHT;
+        atmosphericTexturePatch.rowPitch = AtmosphericSkyGenerator.WIDTH * 4 * Short.BYTES;
+        atmosphericTexturePatch.format = TextureFormat.RGBA16_SFLOAT;
+        atmosphericTextureEntry.patches = new TexturePatch[]{atmosphericTexturePatch};
+        atmosphericTextureUpdate.entries = new TextureBatchEntry[]{atmosphericTextureEntry};
+    }
 
     public static boolean isEnabled() { return enabled; }
     public static void setEnabled(boolean value) { enabled = value; }
@@ -95,43 +108,47 @@ public class SkyRenderer {
         }
     }
 
-    private long sunLightHandle = 0;
-
     private void updateSunLight(RemixAPI api, ClientLevel world, float tickDelta) {
-        float celestialAngle = world.getTimeOfDay(tickDelta);
-        float radians = celestialAngle * 2.0f * (float) Math.PI;
+        float skyAngle = world.getTimeOfDay(tickDelta);
+        float angle = (float) (skyAngle * 2.0 * Math.PI + Math.PI / 2.0);
+        float sunX = (float) Math.cos(angle);
+        float sunY = (float) Math.sin(angle);
+        float sunZ = 0.0f;
 
-        // Position of the celestial body in the sky
-        float sunX = (float) Math.cos(radians);
-        float sunY = (float) Math.sin(radians);
+        float cr = (float) Math.cos(Math.toRadians(35.0f));
+        float sr = (float) Math.sin(Math.toRadians(35.0f));
+        float ny = sunY * cr - sunZ * sr;
+        float nz = sunY * sr + sunZ * cr;
+        float nx = sunX;
 
-        boolean isDay = sunY > 0.0f;
+        boolean isDay = ny > 0.0f;
         float dirX, dirY, dirZ;
         float radR, radG, radB;
 
         if (isDay) {
-            // Sun in the sky: incoming light direction points down towards the earth
-            dirX = -sunX;
-            dirY = -sunY;
-            dirZ = 0.0f;
-            float lum = 35.0f * Math.max(0.1f, sunY);
-            radR = lum;
-            radG = lum * 0.98f;
-            radB = lum * 0.90f;
+            // Incoming light direction points down from the sun
+            dirX = -nx;
+            dirY = -ny;
+            dirZ = -nz;
+            float lum = 32.0f * Math.max(0.05f, ny);
+            float opticalDepth = 1.0f / Math.max(0.05f, ny);
+            radR = lum * (float) Math.exp(-0.06f * opticalDepth);
+            radG = lum * (float) Math.exp(-0.12f * opticalDepth);
+            radB = lum * (float) Math.exp(-0.25f * opticalDepth);
         } else {
-            // Moon in the sky: incoming light direction points down towards the earth
-            dirX = sunX;
-            dirY = sunY; // since sunY < 0, dirY < 0 (pointing down towards the earth)
-            dirZ = 0.0f;
-            float lum = 2.5f * Math.max(0.1f, -sunY);
-            radR = lum * 0.70f;
-            radG = lum * 0.85f;
+            // Incoming light direction points down from the moon
+            dirX = nx;
+            dirY = ny; // ny is negative, so dirY is negative (pointing down)
+            dirZ = nz;
+            float lum = 0.08f * Math.max(0.05f, -ny);
+            radR = lum * 0.85f;
+            radG = lum * 0.90f;
             radB = lum * 1.00f;
         }
 
         try {
             if (sunLightHandle != 0) {
-                api.destroyLight(sunLightHandle);
+                try { api.destroyLight(sunLightHandle); } catch (Exception ignored) {}
                 sunLightHandle = 0;
             }
 
@@ -158,6 +175,7 @@ public class SkyRenderer {
         short g = (short) (HardcodedVertex.packHalf2x16(radiance[1], 0.0f) & 0xFFFF);
         short b = (short) (HardcodedVertex.packHalf2x16(radiance[2], 0.0f) & 0xFFFF);
         short a = (short) (HardcodedVertex.packHalf2x16(1.0f, 0.0f) & 0xFFFF);
+
         for (int i = 0; i < AtmosphericSkyGenerator.WIDTH * AtmosphericSkyGenerator.HEIGHT; i++) {
             pixels.putShort(r).putShort(g).putShort(b).putShort(a);
         }
@@ -169,24 +187,15 @@ public class SkyRenderer {
 
     private void publishSkyDome(RemixAPI api, ByteBuffer pixels, float multiplier) {
         try {
-            if (skyTextureHandle != 0) {
-                try { api.destroyTexture(skyTextureHandle); } catch (Exception ignored) {}
-                skyTextureHandle = 0;
-            }
-            if (skyDomeLightHandle != 0) {
-                try { api.destroyLight(skyDomeLightHandle); } catch (Exception ignored) {}
-                skyDomeLightHandle = 0;
-            }
+            if (skyTextureHandle == 0) {
+                TextureFromMemoryInfo texInfo = TextureFromMemoryInfo.builder()
+                        .hash(0x51C7_53C1_0000_0001L)
+                        .size(AtmosphericSkyGenerator.WIDTH, AtmosphericSkyGenerator.HEIGHT)
+                        .format(TextureFormat.RGBA16_SFLOAT)
+                        .pixelData(pixels)
+                        .build();
+                skyTextureHandle = api.createTextureFromMemory(texInfo);
 
-            TextureFromMemoryInfo texInfo = TextureFromMemoryInfo.builder()
-                    .hash(0x51C7_53C1_0000_0001L)
-                    .size(AtmosphericSkyGenerator.WIDTH, AtmosphericSkyGenerator.HEIGHT)
-                    .format(TextureFormat.RGBA16_SFLOAT)
-                    .pixelData(pixels)
-                    .build();
-            skyTextureHandle = api.createTextureFromMemory(texInfo);
-
-            if (skyTextureHandle != 0) {
                 LightInfoDomeEXT domeExt = new LightInfoDomeEXT();
                 domeExt.setColorTexture(skyTextureHandle);
                 LightInfo lightInfo = LightInfo.builder()
@@ -194,6 +203,10 @@ public class SkyRenderer {
                         .domeExt(domeExt)
                         .build();
                 skyDomeLightHandle = api.createLight(lightInfo);
+            } else {
+                atmosphericTexturePatch.pixelData = pixels;
+                atmosphericTextureEntry.handle = skyTextureHandle;
+                api.updateTextureFromMemory(atmosphericTextureUpdate);
             }
 
             if (skyDomeLightHandle != 0) {
@@ -210,24 +223,21 @@ public class SkyRenderer {
         }
 
         try {
-            if (skyAmbientRectHandle != 0) {
-                try { api.destroyLight(skyAmbientRectHandle); } catch (Exception ignored) {}
-                skyAmbientRectHandle = 0;
+            if (skyAmbientRectHandle == 0) {
+                LightInfoRectEXT rectExt = LightInfoRectEXT.builder()
+                        .position(0.0f, SKY_AMBIENT_RECT_Y, 0.0f)
+                        .xAxis(1, 0, 0)
+                        .xSize(SKY_AMBIENT_RECT_HALF_SIZE)
+                        .yAxis(0, 0, 1)
+                        .ySize(SKY_AMBIENT_RECT_HALF_SIZE)
+                        .direction(0, -1, 0)
+                        .build();
+                LightInfo lightInfo = LightInfo.builder()
+                        .radiance(r, g, b)
+                        .rectExt(rectExt)
+                        .build();
+                skyAmbientRectHandle = api.createLight(lightInfo);
             }
-
-            LightInfoRectEXT rectExt = LightInfoRectEXT.builder()
-                    .position(0.0f, SKY_AMBIENT_RECT_Y, 0.0f)
-                    .xAxis(1, 0, 0)
-                    .xSize(SKY_AMBIENT_RECT_HALF_SIZE)
-                    .yAxis(0, 0, 1)
-                    .ySize(SKY_AMBIENT_RECT_HALF_SIZE)
-                    .direction(0, -1, 0)
-                    .build();
-            LightInfo lightInfo = LightInfo.builder()
-                    .radiance(r, g, b)
-                    .rectExt(rectExt)
-                    .build();
-            skyAmbientRectHandle = api.createLight(lightInfo);
 
             if (skyAmbientRectHandle != 0) {
                 api.drawLightInstance(skyAmbientRectHandle);
@@ -237,23 +247,44 @@ public class SkyRenderer {
         }
     }
 
-    private static boolean isSubterraneanBiome(ClientLevel world, Vec3 cameraPos) {
-        if (world == null || cameraPos == null) return false;
-        try {
-            BlockPos pos = BlockPos.containing(cameraPos.x, cameraPos.y, cameraPos.z);
-            ResourceLocation biomeId = world.getBiome(pos).unwrapKey().map(ResourceKey::location).orElse(null);
-            if (biomeId == null) return false;
-            String ns = biomeId.getNamespace();
-            String path = biomeId.getPath();
-            return ns.equals("alexscaves") || path.contains("cave") || path.contains("cavern") || path.contains("underground");
-        } catch (Exception ignored) {
-            return false;
+    public void clearLevelState(RemixAPI api) {
+        if (api == null) return;
+        if (sunLightHandle != 0) {
+            try { api.destroyLight(sunLightHandle); } catch (Exception ignored) {}
+            sunLightHandle = 0;
+        }
+        if (skyAmbientRectHandle != 0) {
+            try { api.destroyLight(skyAmbientRectHandle); } catch (Exception ignored) {}
+            skyAmbientRectHandle = 0;
+        }
+        if (skyDomeLightHandle != 0) {
+            try { api.destroyLight(skyDomeLightHandle); } catch (Exception ignored) {}
+            skyDomeLightHandle = 0;
+        }
+        if (skyTextureHandle != 0) {
+            try { api.destroyTexture(skyTextureHandle); } catch (Exception ignored) {}
+            skyTextureHandle = 0;
         }
     }
 
-    public void cleanup() {
-        skyTextureHandle = 0;
-        skyDomeLightHandle = 0;
-        skyAmbientRectHandle = 0;
+    private static boolean isSubterraneanBiome(ClientLevel world, Vec3 cameraPos) {
+        if (world == null || cameraPos == null) return false;
+        try {
+            BlockPos pos = BlockPos.containing(cameraPos);
+            ResourceKey<?> biomeKey = world.registryAccess()
+                    .registryOrThrow(Registries.BIOME)
+                    .getResourceKey(world.getBiome(pos).value())
+                    .orElse(null);
+
+            if (biomeKey == null) return false;
+            ResourceLocation id = biomeKey.location();
+            String ns = id.getNamespace();
+            String path = id.getPath();
+
+            if ("alexscaves".equals(ns)) return true;
+            return path.contains("cave") || path.contains("underground") || path.contains("subterranean");
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 }

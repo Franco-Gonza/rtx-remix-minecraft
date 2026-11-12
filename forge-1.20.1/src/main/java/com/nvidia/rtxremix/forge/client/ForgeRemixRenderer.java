@@ -37,6 +37,12 @@ public final class ForgeRemixRenderer {
     private com.nvidia.rtxremix.forge.entity.RemixEntityPass entityPass;
     private long terrainAtlasTexture = 0;
     private long defaultTerrainMaterial = 0;
+    private long solidTerrainMaterial = 0;
+    private long cutoutTerrainMaterial = 0;
+    private long waterMaterial = 0;
+    private long translucentTerrainMaterial = 0;
+    private long waterNormalTexture = 0;
+    private long waterWhiteTexture = 0;
 
     private boolean initialized = false;
     private boolean active = false;
@@ -228,22 +234,108 @@ public final class ForgeRemixRenderer {
                     LOGGER.info("Captured and uploaded Minecraft terrain atlas texture ({}x{}) to RTX Remix: handle=0x{}",
                             width, height, Long.toHexString(terrainAtlasTexture));
 
-                    MaterialInfoOpaqueEXT opaque = MaterialInfoOpaqueEXT.builder()
+                    // 1. Solid terrain material (opaque block atlas)
+                    MaterialInfoOpaqueEXT solidOpaque = MaterialInfoOpaqueEXT.builder()
                             .roughnessConstant(0.8f)
                             .metallicConstant(0.0f)
                             .useDrawCallAlphaState(true)
                             .build();
-                    MaterialInfo matInfo = MaterialInfo.builder()
-                            .hash(0x4D41_545F_5445_5252L)
+                    MaterialInfo solidInfo = MaterialInfo.builder()
+                            .hash(0x4D41_545F_534F_4C49L) // "MAT_SOLI"
                             .albedoTexture(terrainAtlasTexture)
-                            .opaqueExt(opaque)
+                            .opaqueExt(solidOpaque)
                             .build();
-                    if (defaultTerrainMaterial != 0) {
-                        try { api.destroyMaterial(defaultTerrainMaterial); } catch (Exception ignored) {}
+                    solidTerrainMaterial = api.createMaterial(solidInfo);
+                    defaultTerrainMaterial = solidTerrainMaterial;
+
+                    // 2. Cutout terrain material (foliage, leaves, tall grass, flowers)
+                    MaterialInfoOpaqueEXT cutoutOpaque = MaterialInfoOpaqueEXT.builder()
+                            .roughnessConstant(0.8f)
+                            .metallicConstant(0.0f)
+                            .alphaTestType(4) // GREATER_OR_EQUAL
+                            .alphaReferenceValue(128)
+                            .useDrawCallAlphaState(true)
+                            .build();
+                    MaterialInfo cutoutInfo = MaterialInfo.builder()
+                            .hash(0x4D41_545F_4355_544FL) // "MAT_CUTO"
+                            .albedoTexture(terrainAtlasTexture)
+                            .opaqueExt(cutoutOpaque)
+                            .build();
+                    cutoutTerrainMaterial = api.createMaterial(cutoutInfo);
+
+                    // 3. Water material (refractive, animated normal flipbook, no diffuse layer)
+                    java.nio.ByteBuffer whiteBuf = org.lwjgl.system.MemoryUtil.memAlloc(4);
+                    try {
+                        whiteBuf.put((byte) 255).put((byte) 255).put((byte) 255).put((byte) 255);
+                        whiteBuf.flip();
+                        TextureFromMemoryInfo whiteInfo = TextureFromMemoryInfo.builder()
+                                .hash(0x5748_4954_4500_0001L) // "WHITE"
+                                .size(1, 1)
+                                .format(TextureFormat.RGBA8_UNORM)
+                                .pixelData(whiteBuf)
+                                .build();
+                        waterWhiteTexture = api.createTextureFromMemory(whiteInfo);
+                    } finally {
+                        org.lwjgl.system.MemoryUtil.memFree(whiteBuf);
                     }
-                    defaultTerrainMaterial = api.createMaterial(matInfo);
-                    LOGGER.info("Created textured default terrain material for RTX Remix: handle=0x{}",
-                            Long.toHexString(defaultTerrainMaterial));
+
+                    try {
+                        java.nio.file.Path normalDds = net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get()
+                                .resolve("textures").resolve("water_normals_flipbook.dds");
+                        if (java.nio.file.Files.exists(normalDds)) {
+                            waterNormalTexture = api.createTextureFromFile(normalDds.toAbsolutePath().toString());
+                            LOGGER.info("Loaded water normals flipbook texture from {}: handle=0x{}",
+                                    normalDds, Long.toHexString(waterNormalTexture));
+                        }
+                    } catch (Exception e) {
+                        LOGGER.warn("Failed loading water normals flipbook: {}", e.getMessage());
+                        waterNormalTexture = 0;
+                    }
+
+                    MaterialInfoTranslucentEXT waterExt = MaterialInfoTranslucentEXT.builder()
+                            .refractiveIndex(1.33f)
+                            .transmittanceColor(0.60f, 0.90f, 0.89f)
+                            .transmittanceMeasurementDistance(1.0f)
+                            .useDiffuseLayer(false)
+                            .build();
+                    MaterialInfo.Builder waterBuilder = MaterialInfo.builder()
+                            .hash(0x5741_5445_525F_4D41L) // "WATER_MA"
+                            .albedoTexture(waterWhiteTexture)
+                            .filterMode(1)
+                            .translucentExt(waterExt);
+                    if (waterNormalTexture != 0) {
+                        waterBuilder.normalTexture(waterNormalTexture)
+                                .spriteSheetRow(10)
+                                .spriteSheetCol(12)
+                                .spriteSheetFps(20);
+                    }
+                    waterMaterial = api.createMaterial(waterBuilder.build());
+
+                    // 4. Translucent terrain material (stained glass, ice)
+                    MaterialInfoTranslucentEXT transExt = MaterialInfoTranslucentEXT.builder()
+                            .refractiveIndex(1.5f)
+                            .transmittanceColor(0.97f, 0.97f, 0.97f)
+                            .transmittanceMeasurementDistance(0.35f)
+                            .useDiffuseLayer(true)
+                            .build();
+                    MaterialInfo transInfo = MaterialInfo.builder()
+                            .hash(0x4D41_545F_5452_414EL) // "MAT_TRAN"
+                            .albedoTexture(terrainAtlasTexture)
+                            .translucentExt(transExt)
+                            .build();
+                    translucentTerrainMaterial = api.createMaterial(transInfo);
+
+                    LOGGER.info("Created specialized terrain materials: solid=0x{}, cutout=0x{}, water=0x{}, trans=0x{}",
+                            Long.toHexString(solidTerrainMaterial),
+                            Long.toHexString(cutoutTerrainMaterial),
+                            Long.toHexString(waterMaterial),
+                            Long.toHexString(translucentTerrainMaterial));
+
+                    // Trigger level chunk reload so all chunks use the definitive materials
+                    if (client.levelRenderer != null) {
+                        client.levelRenderer.allChanged();
+                        LOGGER.info("Triggered levelRenderer.allChanged() to rebuild chunk meshes with definitive materials.");
+                    }
                 } finally {
                     org.lwjgl.system.MemoryUtil.memFree(buffer);
                 }
@@ -380,12 +472,23 @@ public final class ForgeRemixRenderer {
                             }
                             iBuf.flip();
 
+                            long matHandle;
+                            if ("water".equals(surface.bucketKey())) {
+                                matHandle = waterMaterial != 0 ? waterMaterial : defaultTerrainMaterial;
+                            } else if (surface.category() == SectionMeshData.CAT_CUTOUT) {
+                                matHandle = cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial;
+                            } else if (surface.category() == SectionMeshData.CAT_TRANSLUCENT) {
+                                matHandle = translucentTerrainMaterial != 0 ? translucentTerrainMaterial : defaultTerrainMaterial;
+                            } else {
+                                matHandle = solidTerrainMaterial != 0 ? solidTerrainMaterial : defaultTerrainMaterial;
+                            }
+
                             MeshInfoSurfaceTriangles surf = new MeshInfoSurfaceTriangles();
                             surf.vertexBuffer = vBuf;
                             surf.vertexCount = vCount;
                             surf.indexBuffer = iBuf;
                             surf.indexCount = iCount;
-                            surf.material = defaultTerrainMaterial;
+                            surf.material = matHandle;
                             surf.flags = MeshInfoSurfaceTriangles.TEXCOORD_BOUNDS;
 
                             long hash = (((long) pos.hashCode()) << 32) ^ surface.category() ^ vCount;
@@ -487,8 +590,39 @@ public final class ForgeRemixRenderer {
         }
     }
 
+    public void clearLevelState() {
+        for (java.util.List<Long> instList : sectionInstances.values()) {
+            if (instList != null) {
+                for (Long inst : instList) {
+                    if (inst != null && inst != 0 && api != null) {
+                        try { api.sceneInstanceRemove(inst); } catch (Exception ignored) {}
+                    }
+                }
+            }
+        }
+        sectionInstances.clear();
+
+        for (java.util.List<Long> meshList : sectionMeshes.values()) {
+            if (meshList != null) {
+                for (Long m : meshList) {
+                    if (m != null && m != 0 && api != null) {
+                        try { api.destroyMesh(m); } catch (Exception ignored) {}
+                    }
+                }
+            }
+        }
+        sectionMeshes.clear();
+
+        com.nvidia.rtxremix.forge.terrain.capture.BlockDataQueue.clear();
+        if (skyRenderer != null && api != null) {
+            skyRenderer.clearLevelState(api);
+        }
+        LOGGER.info("Cleared level terrain and sky state in RTX Remix.");
+    }
+
     public void destroy() {
         submitFrameCalled = false;
+        clearLevelState();
         if (entitySubmitter != null) {
             entitySubmitter.destroy();
             entitySubmitter = null;
@@ -496,14 +630,35 @@ public final class ForgeRemixRenderer {
         if (confLayerDriver != null) {
             confLayerDriver.releaseAll();
         }
+        if (solidTerrainMaterial != 0) {
+            try { api.destroyMaterial(solidTerrainMaterial); } catch (Exception ignored) {}
+            solidTerrainMaterial = 0;
+        }
+        if (cutoutTerrainMaterial != 0) {
+            try { api.destroyMaterial(cutoutTerrainMaterial); } catch (Exception ignored) {}
+            cutoutTerrainMaterial = 0;
+        }
+        if (waterMaterial != 0) {
+            try { api.destroyMaterial(waterMaterial); } catch (Exception ignored) {}
+            waterMaterial = 0;
+        }
+        if (translucentTerrainMaterial != 0) {
+            try { api.destroyMaterial(translucentTerrainMaterial); } catch (Exception ignored) {}
+            translucentTerrainMaterial = 0;
+        }
+        if (waterNormalTexture != 0) {
+            try { api.destroyTexture(waterNormalTexture); } catch (Exception ignored) {}
+            waterNormalTexture = 0;
+        }
+        if (waterWhiteTexture != 0) {
+            try { api.destroyTexture(waterWhiteTexture); } catch (Exception ignored) {}
+            waterWhiteTexture = 0;
+        }
         if (terrainAtlasTexture != 0) {
             try { api.destroyTexture(terrainAtlasTexture); } catch (Exception ignored) {}
             terrainAtlasTexture = 0;
         }
-        if (defaultTerrainMaterial != 0) {
-            try { api.destroyMaterial(defaultTerrainMaterial); } catch (Exception ignored) {}
-            defaultTerrainMaterial = 0;
-        }
+        defaultTerrainMaterial = 0;
         if (interop != null) {
             interop.destroy();
             interop = null;
