@@ -22,12 +22,23 @@ public final class AtmosphericSkyGenerator {
 
     public ByteBuffer generate(float sunAngle, float rainStrength, float[] meanOut) {
         outputBuffer.clear();
-        float sunY = (float) Math.sin((sunAngle - 0.25f) * 2.0 * Math.PI);
+        // sunAngle: 0.0 at dawn, 0.25 at noon, 0.5 at dusk, 0.75 at midnight
+        float sunY = (float) Math.sin(sunAngle * 2.0 * Math.PI);
 
-        // Rayleigh scattering approximation
-        float rCol = Math.max(0.01f, 0.4f * sunY + 0.1f);
-        float gCol = Math.max(0.01f, 0.6f * sunY + 0.15f);
-        float bCol = Math.max(0.02f, 0.9f * sunY + 0.2f);
+        // Physically-based scattering approximation
+        float rCol, gCol, bCol;
+        if (sunY >= 0.0f) {
+            // Day: blue atmospheric dome with horizon glow
+            rCol = Math.max(0.05f, 0.45f * sunY + 0.15f);
+            gCol = Math.max(0.08f, 0.65f * sunY + 0.20f);
+            bCol = Math.max(0.15f, 0.95f * sunY + 0.30f);
+        } else {
+            // Night: deep dark blue ambient dome
+            float nightFactor = Math.min(1.0f, -sunY);
+            rCol = 0.015f * nightFactor;
+            gCol = 0.020f * nightFactor;
+            bCol = 0.060f * nightFactor;
+        }
 
         if (rainStrength > 0.0f) {
             float gray = (rCol + gCol + bCol) / 3.0f * 0.4f;

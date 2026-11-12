@@ -190,7 +190,9 @@ public class RemixEntitySubmitter {
 
         EntityPartKey partKey = new EntityPartKey(result.entity(), layer.layerIndex());
         Long existingInstance = retainedInstances.get(partKey);
-        int categoryFlags = InstanceCategoryBit.THIRD_PERSON_PLAYER_MODEL;
+        int categoryFlags = result.firstPersonLocalPlayer()
+                ? (InstanceCategoryBit.THIRD_PERSON_PLAYER_MODEL | InstanceCategoryBit.THIRD_PERSON_PLAYER_BODY)
+                : 0;
 
         try {
             if (existingInstance != null) {

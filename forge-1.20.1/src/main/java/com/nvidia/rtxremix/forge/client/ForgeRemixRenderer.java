@@ -35,6 +35,7 @@ public final class ForgeRemixRenderer {
     private TextureOverlay overlay;
     private com.nvidia.rtxremix.forge.entity.RemixEntitySubmitter entitySubmitter;
     private com.nvidia.rtxremix.forge.entity.RemixEntityPass entityPass;
+    private long terrainAtlasTexture = 0;
     private long defaultTerrainMaterial = 0;
 
     private boolean initialized = false;
@@ -184,6 +185,8 @@ public final class ForgeRemixRenderer {
     public void beginFrame(Camera camera, float partialTicks) {
         if (!isInitialized() || !active) return;
 
+        updateTerrainMaterialIfReady();
+
         frameIndex++;
         Vec3 pos = camera.getPosition();
         updateCamera(camera, partialTicks);
@@ -192,6 +195,61 @@ public final class ForgeRemixRenderer {
             skyRenderer.render(api, client.level, pos, partialTicks);
             boolean isUnderwater = camera.getFluidInCamera() == net.minecraft.world.level.material.FogType.WATER;
             confLayerDriver.update(client.level, pos, isUnderwater, 1.0f / 60.0f);
+        }
+    }
+
+    public void updateTerrainMaterialIfReady() {
+        if (terrainAtlasTexture != 0 || api == null || client == null) return;
+        try {
+            if (client.getModelManager() == null) return;
+            net.minecraft.client.renderer.texture.TextureAtlas atlas =
+                    client.getModelManager().getAtlas(net.minecraft.client.renderer.texture.TextureAtlas.LOCATION_BLOCKS);
+            if (atlas == null) return;
+
+            int texId = atlas.getId();
+            if (texId <= 0) return;
+
+            org.lwjgl.opengl.GL11.glBindTexture(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, texId);
+            int width = org.lwjgl.opengl.GL11.glGetTexLevelParameteri(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, 0, org.lwjgl.opengl.GL11.GL_TEXTURE_WIDTH);
+            int height = org.lwjgl.opengl.GL11.glGetTexLevelParameteri(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, 0, org.lwjgl.opengl.GL11.GL_TEXTURE_HEIGHT);
+
+            if (width > 0 && height > 0) {
+                java.nio.ByteBuffer buffer = org.lwjgl.system.MemoryUtil.memAlloc(width * height * 4);
+                try {
+                    org.lwjgl.opengl.GL11.glGetTexImage(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, 0, org.lwjgl.opengl.GL11.GL_RGBA, org.lwjgl.opengl.GL11.GL_UNSIGNED_BYTE, buffer);
+                    long texHash = 0x424C_4F43_4B53_0001L;
+                    TextureFromMemoryInfo texInfo = TextureFromMemoryInfo.builder()
+                            .hash(texHash)
+                            .size(width, height)
+                            .format(TextureFormat.RGBA8_UNORM)
+                            .pixelData(buffer)
+                            .build();
+                    terrainAtlasTexture = api.createTextureFromMemory(texInfo);
+                    LOGGER.info("Captured and uploaded Minecraft terrain atlas texture ({}x{}) to RTX Remix: handle=0x{}",
+                            width, height, Long.toHexString(terrainAtlasTexture));
+
+                    MaterialInfoOpaqueEXT opaque = MaterialInfoOpaqueEXT.builder()
+                            .roughnessConstant(0.8f)
+                            .metallicConstant(0.0f)
+                            .useDrawCallAlphaState(true)
+                            .build();
+                    MaterialInfo matInfo = MaterialInfo.builder()
+                            .hash(0x4D41_545F_5445_5252L)
+                            .albedoTexture(terrainAtlasTexture)
+                            .opaqueExt(opaque)
+                            .build();
+                    if (defaultTerrainMaterial != 0) {
+                        try { api.destroyMaterial(defaultTerrainMaterial); } catch (Exception ignored) {}
+                    }
+                    defaultTerrainMaterial = api.createMaterial(matInfo);
+                    LOGGER.info("Created textured default terrain material for RTX Remix: handle=0x{}",
+                            Long.toHexString(defaultTerrainMaterial));
+                } finally {
+                    org.lwjgl.system.MemoryUtil.memFree(buffer);
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.error("Failed to capture and upload terrain atlas: {}", e.getMessage(), e);
         }
     }
 
@@ -265,6 +323,8 @@ public final class ForgeRemixRenderer {
         if (!isInitialized() || !active) return;
 
         try {
+            updateTerrainMaterialIfReady();
+
             // Drain captured block terrain data and submit to Remix
             drainedCaptures.clear();
             com.nvidia.rtxremix.forge.terrain.capture.BlockDataQueue.drain(drainedCaptures);
@@ -394,7 +454,7 @@ public final class ForgeRemixRenderer {
     }
 
     public void presentFrameVk() {
-        if (!isInitialized() || !active) return;
+        if (!isInitialized()) return;
 
         try {
             if (!submitFrameCalled) {
@@ -435,6 +495,14 @@ public final class ForgeRemixRenderer {
         }
         if (confLayerDriver != null) {
             confLayerDriver.releaseAll();
+        }
+        if (terrainAtlasTexture != 0) {
+            try { api.destroyTexture(terrainAtlasTexture); } catch (Exception ignored) {}
+            terrainAtlasTexture = 0;
+        }
+        if (defaultTerrainMaterial != 0) {
+            try { api.destroyMaterial(defaultTerrainMaterial); } catch (Exception ignored) {}
+            defaultTerrainMaterial = 0;
         }
         if (interop != null) {
             interop.destroy();
