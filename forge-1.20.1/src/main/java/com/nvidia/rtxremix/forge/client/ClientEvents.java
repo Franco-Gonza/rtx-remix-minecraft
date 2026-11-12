@@ -60,9 +60,26 @@ public final class ClientEvents {
     }
 
     @SubscribeEvent
+    public void onKeyInput(net.minecraftforge.client.event.InputEvent.Key event) {
+        if (event.getAction() == org.lwjgl.glfw.GLFW.GLFW_PRESS && event.getKey() == org.lwjgl.glfw.GLFW.GLFW_KEY_X) {
+            long window = Minecraft.getInstance().getWindow().getWindow();
+            boolean altDown = (event.getModifiers() & org.lwjgl.glfw.GLFW.GLFW_MOD_ALT) != 0
+                    || org.lwjgl.glfw.GLFW.glfwGetKey(window, org.lwjgl.glfw.GLFW.GLFW_KEY_LEFT_ALT) == org.lwjgl.glfw.GLFW.GLFW_PRESS
+                    || org.lwjgl.glfw.GLFW.glfwGetKey(window, org.lwjgl.glfw.GLFW.GLFW_KEY_RIGHT_ALT) == org.lwjgl.glfw.GLFW.GLFW_PRESS;
+            boolean ctrlDown = (event.getModifiers() & org.lwjgl.glfw.GLFW.GLFW_MOD_CONTROL) != 0
+                    || org.lwjgl.glfw.GLFW.glfwGetKey(window, org.lwjgl.glfw.GLFW.GLFW_KEY_LEFT_CONTROL) == org.lwjgl.glfw.GLFW.GLFW_PRESS
+                    || org.lwjgl.glfw.GLFW.glfwGetKey(window, org.lwjgl.glfw.GLFW.GLFW_KEY_RIGHT_CONTROL) == org.lwjgl.glfw.GLFW.GLFW_PRESS;
+
+            if (altDown && !ctrlDown) {
+                LOGGER.info("Alt+X detected via Forge InputEvent; toggling RTX Remix menu");
+                ForgeRemixRenderer.getInstance().toggleMenu();
+            }
+        }
+    }
+
+    @SubscribeEvent
     public void onScreenInit(ScreenEvent.Init.Post event) {
         if (event.getScreen() instanceof OptionsScreen optionsScreen) {
-            // Inject the RTX Remix Settings button into Minecraft's Options screen
             int buttonWidth = 150;
             int buttonHeight = 20;
             int x = optionsScreen.width / 2 - 155;
@@ -71,8 +88,8 @@ public final class ClientEvents {
             Button rtxSettingsButton = Button.builder(
                 Component.literal("RTX Remix Settings..."),
                 button -> {
-                    LOGGER.info("Opening RTX Remix Settings screen...");
-                    // Opens settings screen
+                    LOGGER.info("Opening RTX Remix Settings from Options menu...");
+                    ForgeRemixRenderer.getInstance().toggleMenu();
                 }
             ).bounds(x, y, buttonWidth, buttonHeight).build();
 
@@ -82,6 +99,13 @@ public final class ClientEvents {
 
     @SubscribeEvent
     public void onRegisterClientCommands(RegisterClientCommandsEvent event) {
-        // Register /rtx command tree
+        event.getDispatcher().register(
+            net.minecraft.commands.Commands.literal("rtx")
+                .then(net.minecraft.commands.Commands.literal("menu")
+                    .executes(ctx -> {
+                        ForgeRemixRenderer.getInstance().toggleMenu();
+                        return 1;
+                    }))
+        );
     }
 }

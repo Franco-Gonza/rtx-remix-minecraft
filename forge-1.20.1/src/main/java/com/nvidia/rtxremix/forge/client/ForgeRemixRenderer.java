@@ -56,16 +56,16 @@ public final class ForgeRemixRenderer {
         return skyRenderer;
     }
 
+    private boolean menuOpen = false;
+
     public synchronized boolean initializeIfSupported() {
-        if (initialized) {
-            return api != null;
+        if (initialized && api != null) {
+            return true;
         }
 
-        initialized = true;
         long windowHandle = client.getWindow().getWindow();
         if (windowHandle == 0) {
             LOGGER.warn("GLFW window not yet ready for RTX Remix initialization.");
-            initialized = false;
             return false;
         }
 
@@ -73,7 +73,6 @@ public final class ForgeRemixRenderer {
         LOGGER.info("Initializing RTX Remix API against Win32 HWND: 0x{}", Long.toHexString(hwnd));
 
         try {
-            net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get();
             java.nio.file.Path d3d9 = net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get()
                     .resolve("remix-sdk").resolve("d3d9.dll");
             String dllPath = d3d9.toAbsolutePath().toString();
@@ -96,14 +95,34 @@ public final class ForgeRemixRenderer {
             entityPass = new com.nvidia.rtxremix.forge.entity.RemixEntityPass();
             confLayerDriver.acquireAll(api, net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get());
             active = true;
+            initialized = true;
             LOGGER.info("NVIDIA RTX Remix initialized successfully on Forge 1.20.1.");
             return true;
         } catch (Exception e) {
             LOGGER.error("Failed to initialize RTX Remix runtime: {}", e.getMessage(), e);
             api = null;
             active = false;
+            initialized = false;
             return false;
         }
+    }
+
+    public void toggleMenu() {
+        if (!isRtxEnabled()) {
+            LOGGER.warn("Cannot toggle RTX Remix menu: renderer not initialized or not active.");
+            return;
+        }
+        menuOpen = !menuOpen;
+        try {
+            api.setConfigVariable("rtx.showUI", menuOpen ? "2" : "0");
+            LOGGER.info("RTX Remix menu toggled: {}", menuOpen ? "OPEN (Developer)" : "CLOSED");
+        } catch (Exception e) {
+            LOGGER.warn("Failed to set rtx.showUI config variable", e);
+        }
+    }
+
+    public boolean isMenuOpen() {
+        return menuOpen;
     }
 
     public boolean isInitialized() {

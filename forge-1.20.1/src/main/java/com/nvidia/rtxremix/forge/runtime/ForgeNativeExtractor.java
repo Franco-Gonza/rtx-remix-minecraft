@@ -53,14 +53,51 @@ public final class ForgeNativeExtractor {
         }
     }
 
-    private static void extractFromJar(Path gameDir) throws IOException {
-        String codeSource = ForgeNativeExtractor.class.getProtectionDomain()
-                .getCodeSource().getLocation().getPath();
-        Path jarPath = Paths.get(codeSource.startsWith("/") && System.getProperty("os.name").toLowerCase().contains("win")
-                ? codeSource.substring(1) : codeSource);
+    private static Path resolveJarPath() {
+        try {
+            net.minecraftforge.fml.ModList ml = net.minecraftforge.fml.ModList.get();
+            if (ml != null) {
+                var mfi = ml.getModFileById("rtxremix");
+                if (mfi != null && mfi.getFile() != null) {
+                    Path p = mfi.getFile().getFilePath();
+                    if (p != null && Files.isRegularFile(p)) {
+                        return p;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
 
-        if (!Files.isRegularFile(jarPath)) {
-            LOGGER.warn("Running in development/unpacked environment; skipping JAR unpack for {}", jarPath);
+        try {
+            String pathStr = ForgeNativeExtractor.class.getProtectionDomain()
+                    .getCodeSource().getLocation().getPath();
+            if (pathStr != null) {
+                pathStr = java.net.URLDecoder.decode(pathStr, java.nio.charset.StandardCharsets.UTF_8);
+                int jarIdx = pathStr.toLowerCase().indexOf(".jar");
+                if (jarIdx != -1) {
+                    pathStr = pathStr.substring(0, jarIdx + 4);
+                }
+                if (pathStr.startsWith("file:")) {
+                    pathStr = pathStr.substring(5);
+                }
+                if (pathStr.startsWith("/") && System.getProperty("os.name").toLowerCase().contains("win")) {
+                    pathStr = pathStr.substring(1);
+                }
+                Path p = Paths.get(pathStr);
+                if (Files.isRegularFile(p)) {
+                    return p;
+                }
+            }
+        } catch (Throwable t) {
+            LOGGER.warn("Failed resolving JAR path: {}", t.getMessage());
+        }
+        return null;
+    }
+
+    private static void extractFromJar(Path gameDir) throws IOException {
+        Path jarPath = resolveJarPath();
+
+        if (jarPath == null || !Files.isRegularFile(jarPath)) {
+            LOGGER.warn("Could not resolve valid JAR path; skipping JAR unpack for {}", jarPath);
             return;
         }
 
