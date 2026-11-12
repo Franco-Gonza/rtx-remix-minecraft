@@ -58,6 +58,7 @@ public class RemixEntitySubmitter {
             buf.put((byte) 0xFF).put((byte) 0xFF).put((byte) 0xFF).put((byte) 0xFF);
             buf.flip();
             TextureFromMemoryInfo info = TextureFromMemoryInfo.builder()
+                    .hash(0xCAFE_BABE_0000_0001L)
                     .size(1, 1)
                     .format(TextureFormat.RGBA8_UNORM)
                     .pixelData(buf)
@@ -324,7 +325,10 @@ public class RemixEntitySubmitter {
                 }
                 buf.flip();
 
+                long texHash = ((long) textureId.hashCode() << 32) ^ ((long) width * 31L + height) ^ 0x55AA55AA55AA55AAL;
+                if (texHash == 0) texHash = 1L;
                 TextureFromMemoryInfo texInfo = TextureFromMemoryInfo.builder()
+                        .hash(texHash)
                         .size(width, height)
                         .format(TextureFormat.RGBA8_UNORM)
                         .pixelData(buf)

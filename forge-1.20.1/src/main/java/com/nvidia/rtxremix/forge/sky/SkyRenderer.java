@@ -112,6 +112,7 @@ public class SkyRenderer {
         try {
             if (skyTextureHandle == 0) {
                 TextureFromMemoryInfo texInfo = TextureFromMemoryInfo.builder()
+                        .hash(0x51C7_53C1_0000_0001L)
                         .size(AtmosphericSkyGenerator.WIDTH, AtmosphericSkyGenerator.HEIGHT)
                         .format(TextureFormat.RGBA16_SFLOAT)
                         .pixelData(pixels)

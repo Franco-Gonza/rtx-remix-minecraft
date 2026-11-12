@@ -38,6 +38,7 @@ public final class ForgeRemixRenderer {
 
     private boolean initialized = false;
     private boolean active = false;
+    private boolean submitFrameCalled = false;
     private long frameIndex = 0;
 
     private ForgeRemixRenderer() {}
@@ -85,9 +86,28 @@ public final class ForgeRemixRenderer {
 
             StartupInfo startup = new StartupInfo.Builder()
                     .hwnd(hwnd)
+                    .forceNoVkSwapchain(false)
+                    .interopImage(true)
+                    .useRemixOwnedChildWindow(true)
                     .build();
 
             api.startup(startup);
+
+            try {
+                InteropInfo interopInfo = api.dxvkGetInteropInfo();
+                LOGGER.info(
+                        "GL interop: got Remix info: dxvkDoneSemaphore_Handle=0x{}, clientDoneSemaphore_Handle=0x{}, imageMemory_Handle=0x{}, w={}, h={}",
+                        Long.toHexString(interopInfo.dxvkDoneSemaphore_Handle),
+                        Long.toHexString(interopInfo.clientDoneSemaphore_Handle),
+                        Long.toHexString(interopInfo.imageMemory_Handle),
+                        interopInfo.width, interopInfo.height);
+                interop = new GlInterop(interopInfo);
+                LOGGER.info("GL interop initialized successfully.");
+            } catch (Exception e) {
+                LOGGER.error("Failed to initialize GL interop: {}", e.getMessage(), e);
+                interop = null;
+            }
+
             overlay = new TextureOverlay();
             entitySubmitter = new com.nvidia.rtxremix.forge.entity.RemixEntitySubmitter(api);
             entityPass = new com.nvidia.rtxremix.forge.entity.RemixEntityPass();
@@ -125,6 +145,10 @@ public final class ForgeRemixRenderer {
 
     public boolean isInitialized() {
         return api != null;
+    }
+
+    public boolean hasInterop() {
+        return interop != null;
     }
 
     public boolean isActive() {
@@ -317,9 +341,23 @@ public final class ForgeRemixRenderer {
                 entityPass.finishFrame(client.level, client.getEntityRenderDispatcher(), 1.0f, entitySubmitter, client.gameRenderer.getMainCamera());
             }
 
-            // Check interop images and draw overlay
-            if (interop != null && interop.getTexture() > 0) {
-                overlay.render(interop.getTexture());
+            // Submit frame to RTX Remix runtime
+            api.submit(null);
+            submitFrameCalled = true;
+
+            // Check interop images and draw raytraced world overlay on Minecraft's OpenGL framebuffer
+            if (interop != null) {
+                try {
+                    InteropInfo interopInfo = api.dxvkGetInteropInfo();
+                    interop.recreateImagesIf(interopInfo);
+                    interop.waitForVk(interopInfo);
+                    int remixTexture = interop.getTexture();
+                    if (remixTexture > 0 && overlay != null) {
+                        overlay.render(remixTexture);
+                    }
+                } catch (Exception e) {
+                    LOGGER.error("Error blitting Vulkan raytraced scene to GL overlay", e);
+                }
             }
         } catch (Exception e) {
             LOGGER.error("Error submitting scene in RTX Remix: {}", e.getMessage(), e);
@@ -330,15 +368,38 @@ public final class ForgeRemixRenderer {
         if (!isInitialized() || !active) return;
 
         try {
-            PresentInfo present = new PresentInfo();
-            present.interopFlipY = 1;
-            api.present(present);
+            if (!submitFrameCalled) {
+                api.submit(null);
+            }
+
+            if (interop != null) {
+                InteropInfo interopInfo = api.dxvkGetInteropInfo();
+                interop.recreateImagesIf(interopInfo);
+                interop.waitForVk(interopInfo);
+                if (client.getMainRenderTarget() != null) {
+                    interop.copyFromFramebuffer(client.getMainRenderTarget().frameBufferId);
+                }
+                interop.signalDone();
+
+                PresentInfo present = new PresentInfo();
+                present.hwndOverride = 0;
+                present.skipVulkanSwapchain = 0;
+                present.interopFlipY = 1;
+                present.clientDoneSemaphore_ValueToWait = interop.getClientDoneSemaphoreValue();
+                present.disableCpuWaitForExternalSemaphores = 0;
+                api.present(present);
+            }
         } catch (RemixException e) {
             LOGGER.error("Error presenting Vulkan frame: {}", e.getMessage(), e);
+        } catch (Exception e) {
+            LOGGER.error("Unexpected error presenting frame: {}", e.getMessage(), e);
+        } finally {
+            submitFrameCalled = false;
         }
     }
 
     public void destroy() {
+        submitFrameCalled = false;
         if (entitySubmitter != null) {
             entitySubmitter.destroy();
             entitySubmitter = null;

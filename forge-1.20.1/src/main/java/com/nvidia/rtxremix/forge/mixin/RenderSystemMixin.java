@@ -26,7 +26,7 @@ public abstract class RenderSystemMixin {
     )
     private static void rtxremix$redirectSwapBuffers(long window) {
         ForgeRemixRenderer renderer = ForgeRemixRenderer.getInstance();
-        if (renderer.isInitialized() && renderer.isActive()) {
+        if (renderer.isInitialized() && renderer.isActive() && renderer.hasInterop()) {
             renderer.presentFrameVk();
         } else {
             GLFW.glfwSwapBuffers(window);
