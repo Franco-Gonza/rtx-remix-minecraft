@@ -6,6 +6,7 @@ package com.nvidia.rtxremix.forge.sky;
 
 import com.nvidia.rtxremix.HardcodedVertex;
 import com.nvidia.rtxremix.LightInfo;
+import com.nvidia.rtxremix.LightInfoDistantEXT;
 import com.nvidia.rtxremix.LightInfoDomeEXT;
 import com.nvidia.rtxremix.LightInfoRectEXT;
 import com.nvidia.rtxremix.RemixAPI;
@@ -90,6 +91,48 @@ public class SkyRenderer {
         if (pixels != null) {
             publishSkyDome(api, pixels, skyDomeMultiplier);
             publishSkyAmbient(api, atmosphericMean[0], atmosphericMean[1], atmosphericMean[2]);
+            updateSunLight(api, world, tickDelta);
+        }
+    }
+
+    private long sunLightHandle = 0;
+
+    private void updateSunLight(RemixAPI api, ClientLevel world, float tickDelta) {
+        float celestialAngle = world.getTimeOfDay(tickDelta);
+        float radians = celestialAngle * 2.0f * (float) Math.PI;
+
+        // Direction vector towards celestial body
+        float sunX = (float) -Math.sin(radians);
+        float sunY = (float) Math.cos(radians);
+        float sunZ = 0.0f;
+
+        boolean isDay = sunY > 0.0f;
+        float dirX = isDay ? -sunX : sunX;
+        float dirY = isDay ? -sunY : sunY;
+        float dirZ = 0.0f;
+
+        float luminance = isDay ? (30.0f * Math.max(0.1f, sunY)) : 0.5f;
+
+        try {
+            if (sunLightHandle != 0) {
+                api.destroyLight(sunLightHandle);
+                sunLightHandle = 0;
+            }
+
+            LightInfo lightInfo = LightInfo.builder()
+                    .radiance(luminance, luminance, luminance)
+                    .distantExt(LightInfoDistantEXT.builder()
+                            .direction(dirX, dirY, dirZ)
+                            .angularDiameterDegrees(1.0f)
+                            .volumetricRadianceScale(1.0f)
+                            .build())
+                    .build();
+            sunLightHandle = api.createLight(lightInfo);
+            if (sunLightHandle != 0) {
+                api.drawLightInstance(sunLightHandle);
+            }
+        } catch (Exception e) {
+            LOGGER.debug("Sun light update failed: {}", e.getMessage());
         }
     }
 

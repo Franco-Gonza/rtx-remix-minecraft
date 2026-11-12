@@ -29,7 +29,7 @@ public class BlockTextureManager {
         }
     }
 
-    private static BlockTextureManager INSTANCE;
+    private static BlockTextureManager INSTANCE = new BlockTextureManager();
     private final Map<ResourceLocation, SpriteEntry> spriteById = new HashMap<>();
 
     public BlockTextureManager() {

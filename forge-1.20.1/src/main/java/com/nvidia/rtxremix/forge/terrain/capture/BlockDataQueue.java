@@ -246,10 +246,11 @@ public final class BlockDataQueue {
                     if (tryReserveCapacity(state, bytes)) return true;
                     if (waitBudgetNs > 0L) {
                         waitBudgetNs = state.capacityChanged.awaitNanos(waitBudgetNs);
+                        if (waitBudgetNs <= 0L) return false;
                         continue;
                     }
                     if (evictIntoReservation(state, data, bytes)) return true;
-                    waitBudgetNs = EVICTION_RETRY_WAIT_NS;
+                    return false;
                 }
                 return false;
             } finally {

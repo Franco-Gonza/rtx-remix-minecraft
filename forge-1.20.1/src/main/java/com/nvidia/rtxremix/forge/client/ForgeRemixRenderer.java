@@ -35,6 +35,7 @@ public final class ForgeRemixRenderer {
     private TextureOverlay overlay;
     private com.nvidia.rtxremix.forge.entity.RemixEntitySubmitter entitySubmitter;
     private com.nvidia.rtxremix.forge.entity.RemixEntityPass entityPass;
+    private long defaultTerrainMaterial = 0;
 
     private boolean initialized = false;
     private boolean active = false;
@@ -109,6 +110,20 @@ public final class ForgeRemixRenderer {
             }
 
             overlay = new TextureOverlay();
+            try {
+                MaterialInfoOpaqueEXT opaque = MaterialInfoOpaqueEXT.builder()
+                        .albedoConstant(1.0f, 1.0f, 1.0f)
+                        .roughnessConstant(0.8f)
+                        .metallicConstant(0.0f)
+                        .useDrawCallAlphaState(true)
+                        .build();
+                MaterialInfo matInfo = MaterialInfo.builder()
+                        .opaqueExt(opaque)
+                        .build();
+                defaultTerrainMaterial = api.createMaterial(matInfo);
+            } catch (Exception e) {
+                LOGGER.warn("Failed creating default terrain material: {}", e.getMessage());
+            }
             entitySubmitter = new com.nvidia.rtxremix.forge.entity.RemixEntitySubmitter(api);
             entityPass = new com.nvidia.rtxremix.forge.entity.RemixEntityPass();
             confLayerDriver.acquireAll(api, net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get());
@@ -159,7 +174,7 @@ public final class ForgeRemixRenderer {
         this.active = active;
     }
 
-    private final java.util.Map<SectionPos, Long> sectionInstances = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<SectionPos, java.util.List<Long>> sectionInstances = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.Map<SectionPos, java.util.List<Long>> sectionMeshes = new java.util.concurrent.ConcurrentHashMap<>();
 
     public boolean hasTerrainMeshes() {
@@ -261,10 +276,14 @@ public final class ForgeRemixRenderer {
 
                 SectionPos pos = blockData.sectionPos();
 
-                // Clean up previous instance and meshes for this section
-                Long oldInstance = sectionInstances.remove(pos);
-                if (oldInstance != null && oldInstance != 0) {
-                    try { api.sceneInstanceRemove(oldInstance); } catch (Exception ignored) {}
+                // Clean up previous instances and meshes for this section
+                java.util.List<Long> oldInstances = sectionInstances.remove(pos);
+                if (oldInstances != null) {
+                    for (Long inst : oldInstances) {
+                        if (inst != null && inst != 0) {
+                            try { api.sceneInstanceRemove(inst); } catch (Exception ignored) {}
+                        }
+                    }
                 }
                 java.util.List<Long> oldMeshes = sectionMeshes.remove(pos);
                 if (oldMeshes != null) {
@@ -277,6 +296,7 @@ public final class ForgeRemixRenderer {
 
                 if (!meshData.isEmpty()) {
                     java.util.List<Long> newMeshes = new java.util.ArrayList<>();
+                    java.util.List<Long> newInstances = new java.util.ArrayList<>();
                     Transform sectionTransform = new Transform();
                     sectionTransform.setTranslation(pos.minBlockX(), pos.minBlockY(), pos.minBlockZ());
 
@@ -305,7 +325,8 @@ public final class ForgeRemixRenderer {
                             surf.vertexCount = vCount;
                             surf.indexBuffer = iBuf;
                             surf.indexCount = iCount;
-                            surf.material = 0;
+                            surf.material = defaultTerrainMaterial;
+                            surf.flags = MeshInfoSurfaceTriangles.TEXCOORD_BOUNDS;
 
                             long hash = (((long) pos.hashCode()) << 32) ^ surface.category() ^ vCount;
                             MeshInfo mi = MeshInfo.builder()
@@ -316,9 +337,9 @@ public final class ForgeRemixRenderer {
                             long mHandle = api.createMesh(mi);
                             if (mHandle != 0) {
                                 newMeshes.add(mHandle);
-                                long instHandle = api.sceneInstanceAdd(mHandle, sectionTransform.matrix, InstanceCategoryBit.WORLD_UI, 0, 0);
+                                long instHandle = api.sceneInstanceAdd(mHandle, sectionTransform.matrix, 0, 0, 0);
                                 if (instHandle != 0) {
-                                    sectionInstances.put(pos, instHandle);
+                                    newInstances.add(instHandle);
                                 }
                             }
                         } catch (Exception e) {
@@ -330,10 +351,18 @@ public final class ForgeRemixRenderer {
                     if (!newMeshes.isEmpty()) {
                         sectionMeshes.put(pos, newMeshes);
                     }
+                    if (!newInstances.isEmpty()) {
+                        sectionInstances.put(pos, newInstances);
+                    }
                 }
                 meshData.release();
             }
             drainedCaptures.clear();
+
+            // Always update camera to match the rendered frame before scene submit
+            if (client.gameRenderer != null && client.gameRenderer.getMainCamera() != null) {
+                updateCamera(client.gameRenderer.getMainCamera(), 1.0f);
+            }
 
             // Finish entity pass and sweep off-screen shadow casters
             if (entityPass != null && entitySubmitter != null && client.level != null
@@ -346,7 +375,7 @@ public final class ForgeRemixRenderer {
             submitFrameCalled = true;
 
             // Check interop images and draw raytraced world overlay on Minecraft's OpenGL framebuffer
-            if (interop != null) {
+            if (interop != null && isRtxEnabled() && client.level != null && hasTerrainMeshes()) {
                 try {
                     InteropInfo interopInfo = api.dxvkGetInteropInfo();
                     interop.recreateImagesIf(interopInfo);

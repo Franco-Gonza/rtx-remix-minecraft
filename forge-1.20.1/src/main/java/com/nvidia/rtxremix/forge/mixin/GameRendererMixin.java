@@ -23,6 +23,14 @@ public abstract class GameRendererMixin {
 
     @Shadow @Final private Camera mainCamera;
 
+    @Inject(method = "render", at = @At("HEAD"))
+    private void rtxremix$onFrameRenderHead(float partialTicks, long nanoTime, boolean renderWorld, CallbackInfo ci) {
+        ForgeRemixRenderer renderer = ForgeRemixRenderer.getInstance();
+        if (!renderer.isInitialized()) {
+            renderer.initializeIfSupported();
+        }
+    }
+
     @Inject(method = "renderLevel", at = @At("HEAD"))
     private void rtxremix$onRenderLevelHead(float partialTicks, long finishTimeNano, PoseStack poseStack, CallbackInfo ci) {
         ForgeRemixRenderer renderer = ForgeRemixRenderer.getInstance();

@@ -84,8 +84,8 @@ public class TextureOverlay {
         RenderSystem.applyModelViewMatrix();
 
         RenderSystem.setProjectionMatrix(savedProjection, VertexSorting.ORTHOGRAPHIC_Z);
-        RenderSystem.enableDepthTest();
         RenderSystem.depthMask(true);
-        RenderSystem.enableBlend();
+        RenderSystem.enableDepthTest();
+        RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
     }
 }
