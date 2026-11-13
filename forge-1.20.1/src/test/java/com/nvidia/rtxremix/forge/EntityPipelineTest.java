@@ -58,4 +58,19 @@ public class EntityPipelineTest {
         assertEquals("mc.underwater", LogicChannels.UNDERWATER);
         assertEquals("mc.biome.", LogicChannels.BIOME_PREFIX);
     }
+
+    @Test
+    void testLightShapesAndKeys() {
+        net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(1, 2, 3);
+        net.minecraft.resources.ResourceLocation ruleId = new net.minecraft.resources.ResourceLocation("minecraft", "torch");
+        com.nvidia.rtxremix.forge.light.BlockLightKey key1 = new com.nvidia.rtxremix.forge.light.BlockLightKey(pos, ruleId, 0);
+        com.nvidia.rtxremix.forge.light.BlockLightKey key2 = new com.nvidia.rtxremix.forge.light.BlockLightKey(pos, ruleId, 0);
+        assertEquals(key1, key2);
+        assertEquals(key1.hashCode(), key2.hashCode());
+
+        assertNotNull(com.nvidia.rtxremix.forge.light.LightShape.valueOf("SPHERE"));
+        assertNotNull(com.nvidia.rtxremix.forge.light.LightShape.valueOf("CYLINDER"));
+        assertNotNull(com.nvidia.rtxremix.forge.light.LightShape.valueOf("RECT"));
+        assertNotNull(com.nvidia.rtxremix.forge.light.LightShape.valueOf("DISK"));
+    }
 }
