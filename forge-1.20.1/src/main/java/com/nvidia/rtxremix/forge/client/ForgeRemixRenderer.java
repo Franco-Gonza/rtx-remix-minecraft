@@ -183,6 +183,7 @@ public final class ForgeRemixRenderer {
 
     private final java.util.Map<SectionPos, java.util.List<Long>> sectionInstances = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.Map<SectionPos, java.util.List<Long>> sectionMeshes = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<SectionPos, java.util.List<Long>> sectionLights = new java.util.concurrent.ConcurrentHashMap<>();
 
     public boolean hasTerrainMeshes() {
         return !sectionInstances.isEmpty();
@@ -450,6 +451,14 @@ public final class ForgeRemixRenderer {
                         }
                     }
                 }
+                java.util.List<Long> oldLights = sectionLights.remove(pos);
+                if (oldLights != null) {
+                    for (Long l : oldLights) {
+                        if (l != null && l != 0) {
+                            try { api.destroyLight(l); } catch (Exception ignored) {}
+                        }
+                    }
+                }
 
                 if (!meshData.isEmpty()) {
                     java.util.List<Long> newMeshes = new java.util.ArrayList<>();
@@ -524,6 +533,78 @@ public final class ForgeRemixRenderer {
                     }
                 }
                 meshData.release();
+
+                java.util.List<com.nvidia.rtxremix.forge.light.LightEntry> bLights = blockData.lights();
+                if (bLights != null && !bLights.isEmpty()) {
+                    java.util.List<Long> newLights = new java.util.ArrayList<>();
+                    for (com.nvidia.rtxremix.forge.light.LightEntry entry : bLights) {
+                        try {
+                            float r = entry.hasColor() ? entry.colorR() : 1.0f;
+                            float g = entry.hasColor() ? entry.colorG() : 0.85f;
+                            float b = entry.hasColor() ? entry.colorB() : 0.6f;
+                            float baseIntensity = entry.hasIntensity() ? entry.intensity() : (entry.lightLevel() * 12.0f);
+                            baseIntensity *= entry.authoredIntensityMultiplier();
+
+                            LightInfo.Builder lib = LightInfo.builder()
+                                    .hash(entry.key() != null ? (long) entry.key().hashCode() : 0)
+                                    .radiance(r * baseIntensity, g * baseIntensity, b * baseIntensity);
+
+                            switch (entry.shape()) {
+                                case SPHERE -> {
+                                    LightInfoSphereEXT sphere = LightInfoSphereEXT.builder()
+                                            .position(entry.x(), entry.y(), entry.z())
+                                            .radius(entry.radius() > 0 ? entry.radius() : 0.05f)
+                                            .volumetricRadianceScale(entry.volumetricRadianceScale())
+                                            .build();
+                                    lib.sphereExt(sphere);
+                                }
+                                case CYLINDER -> {
+                                    LightInfoCylinderEXT cyl = LightInfoCylinderEXT.builder()
+                                            .position(entry.x(), entry.y(), entry.z())
+                                            .radius(entry.radius() > 0 ? entry.radius() : 0.05f)
+                                            .axis(entry.axisX(), entry.axisY(), entry.axisZ())
+                                            .axisLength(entry.axisLength())
+                                            .volumetricRadianceScale(entry.volumetricRadianceScale())
+                                            .build();
+                                    lib.cylinderExt(cyl);
+                                }
+                                case RECT -> {
+                                    LightInfoRectEXT rect = LightInfoRectEXT.builder()
+                                            .position(entry.x(), entry.y(), entry.z())
+                                            .xAxis(entry.xAxisX(), entry.xAxisY(), entry.xAxisZ())
+                                            .xSize(entry.xSize())
+                                            .yAxis(entry.yAxisX(), entry.yAxisY(), entry.yAxisZ())
+                                            .ySize(entry.ySize())
+                                            .direction(entry.directionX(), entry.directionY(), entry.directionZ())
+                                            .volumetricRadianceScale(entry.volumetricRadianceScale())
+                                            .build();
+                                    lib.rectExt(rect);
+                                }
+                                case DISK -> {
+                                    LightInfoDiskEXT disk = LightInfoDiskEXT.builder()
+                                            .position(entry.x(), entry.y(), entry.z())
+                                            .xAxis(entry.xAxisX(), entry.xAxisY(), entry.xAxisZ())
+                                            .xRadius(entry.xSize())
+                                            .yAxis(entry.yAxisX(), entry.yAxisY(), entry.yAxisZ())
+                                            .yRadius(entry.ySize())
+                                            .direction(entry.directionX(), entry.directionY(), entry.directionZ())
+                                            .volumetricRadianceScale(entry.volumetricRadianceScale())
+                                            .build();
+                                    lib.diskExt(disk);
+                                }
+                            }
+                            long lightHandle = api.createLight(lib.build());
+                            if (lightHandle != 0) {
+                                newLights.add(lightHandle);
+                            }
+                        } catch (Exception e) {
+                            LOGGER.debug("Failed creating block light at {},{},{}: {}", entry.x(), entry.y(), entry.z(), e.getMessage());
+                        }
+                    }
+                    if (!newLights.isEmpty()) {
+                        sectionLights.put(pos, newLights);
+                    }
+                }
             }
             drainedCaptures.clear();
 
@@ -536,6 +617,18 @@ public final class ForgeRemixRenderer {
             if (entityPass != null && entitySubmitter != null && client.level != null
                     && client.gameRenderer != null && client.gameRenderer.getMainCamera() != null) {
                 entityPass.finishFrame(client.level, client.getEntityRenderDispatcher(), 1.0f, entitySubmitter, client.gameRenderer.getMainCamera());
+            }
+
+            // Draw all active terrain block lights
+            for (java.util.List<Long> lights : sectionLights.values()) {
+                if (lights != null) {
+                    for (int i = 0; i < lights.size(); i++) {
+                        long handle = lights.get(i);
+                        if (handle != 0) {
+                            try { api.drawLightInstance(handle); } catch (Exception ignored) {}
+                        }
+                    }
+                }
             }
 
             // Submit frame to RTX Remix runtime
@@ -617,6 +710,17 @@ public final class ForgeRemixRenderer {
             }
         }
         sectionMeshes.clear();
+
+        for (java.util.List<Long> lightList : sectionLights.values()) {
+            if (lightList != null) {
+                for (Long l : lightList) {
+                    if (l != null && l != 0 && api != null) {
+                        try { api.destroyLight(l); } catch (Exception ignored) {}
+                    }
+                }
+            }
+        }
+        sectionLights.clear();
 
         com.nvidia.rtxremix.forge.terrain.capture.BlockDataQueue.clear();
         if (skyRenderer != null && api != null) {
