@@ -43,6 +43,9 @@ public final class ForgeRemixRenderer {
     private long translucentTerrainMaterial = 0;
     private long waterNormalTexture = 0;
     private long waterWhiteTexture = 0;
+    private long solidBlendExtPtr = 0;
+    private long cutoutBlendExtPtr = 0;
+    private long transBlendExtPtr = 0;
 
     private boolean initialized = false;
     private boolean active = false;
@@ -227,7 +230,9 @@ public final class ForgeRemixRenderer {
             if (width > 0 && height > 0) {
                 java.nio.ByteBuffer buffer = org.lwjgl.system.MemoryUtil.memAlloc(width * height * 4);
                 try {
-                    org.lwjgl.opengl.GL11.glGetTexImage(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, 0, org.lwjgl.opengl.GL11.GL_RGBA, org.lwjgl.opengl.GL11.GL_UNSIGNED_BYTE, buffer);
+                    byte[] stitched = stitchAtlasRGBA(atlas, width, height);
+                    buffer.put(stitched);
+                    buffer.flip();
                     long texHash = 0x424C_4F43_4B53_0001L;
                     TextureFromMemoryInfo texInfo = TextureFromMemoryInfo.builder()
                             .hash(texHash)
@@ -236,8 +241,19 @@ public final class ForgeRemixRenderer {
                             .pixelData(buffer)
                             .build();
                     terrainAtlasTexture = api.createTextureFromMemory(texInfo);
-                    LOGGER.info("Captured and uploaded Minecraft terrain atlas texture ({}x{}) to RTX Remix: handle=0x{}",
+                    LOGGER.info("Stitched and uploaded Minecraft terrain atlas texture ({}x{}) to RTX Remix: handle=0x{}",
                             width, height, Long.toHexString(terrainAtlasTexture));
+
+                    if (solidBlendExtPtr == 0) {
+                        InstanceInfoBlendEXT solidBlend = InstanceInfoBlendEXT.textureTimesVertexColor();
+                        solidBlendExtPtr = solidBlend.allocNative(0);
+
+                        InstanceInfoBlendEXT cutoutBlend = InstanceInfoBlendEXT.textureTimesVertexColorAlphaTest(128);
+                        cutoutBlendExtPtr = cutoutBlend.allocNative(0);
+
+                        InstanceInfoBlendEXT transBlend = InstanceInfoBlendEXT.textureTimesVertexColor();
+                        transBlendExtPtr = transBlend.allocNative(0);
+                    }
 
                     // 1. Solid terrain material (opaque block atlas)
                     MaterialInfoOpaqueEXT solidOpaque = MaterialInfoOpaqueEXT.builder()
@@ -353,6 +369,38 @@ public final class ForgeRemixRenderer {
         } catch (Exception e) {
             LOGGER.error("Failed to capture and upload terrain atlas: {}", e.getMessage(), e);
         }
+    }
+
+    private static byte[] stitchAtlasRGBA(net.minecraft.client.renderer.texture.TextureAtlas atlas, int width, int height) {
+        byte[] buf = new byte[width * height * 4];
+        java.util.Set<net.minecraft.resources.ResourceLocation> locations = atlas.getTextureLocations();
+        if (locations != null) {
+            for (net.minecraft.resources.ResourceLocation loc : locations) {
+                net.minecraft.client.renderer.texture.TextureAtlasSprite sprite = atlas.getSprite(loc);
+                if (sprite == null) continue;
+                net.minecraft.client.renderer.texture.SpriteContents contents = sprite.contents();
+                if (contents == null) continue;
+                com.mojang.blaze3d.platform.NativeImage img = contents.getOriginalImage();
+                if (img == null) continue;
+
+                int sx = sprite.getX();
+                int sy = sprite.getY();
+                int sw = contents.width();
+                int sh = contents.height();
+
+                for (int y = 0; y < sh && (sy + y) < height; y++) {
+                    for (int x = 0; x < sw && (sx + x) < width; x++) {
+                        int abgr = img.getPixelRGBA(x, y);
+                        int idx = ((sy + y) * width + (sx + x)) * 4;
+                        buf[idx]     = (byte) (abgr & 0xFF);         // R
+                        buf[idx + 1] = (byte) ((abgr >> 8) & 0xFF);  // G
+                        buf[idx + 2] = (byte) ((abgr >> 16) & 0xFF); // B
+                        buf[idx + 3] = (byte) ((abgr >> 24) & 0xFF); // A
+                    }
+                }
+            }
+        }
+        return buf;
     }
 
     private void updateCamera(Camera camera, float tickDelta) {
@@ -481,23 +529,30 @@ public final class ForgeRemixRenderer {
                             for (int q = 0; q < quads; q++) {
                                 int base = q * 4;
                                 iBuf.putInt(base);
+                                iBuf.putInt(base + 2);
                                 iBuf.putInt(base + 1);
-                                iBuf.putInt(base + 2);
                                 iBuf.putInt(base);
-                                iBuf.putInt(base + 2);
                                 iBuf.putInt(base + 3);
+                                iBuf.putInt(base + 2);
                             }
                             iBuf.flip();
 
                             long matHandle;
+                            long pNext = 0;
+                            int doubleSided = 0;
                             if ("water".equals(surface.bucketKey())) {
                                 matHandle = waterMaterial != 0 ? waterMaterial : defaultTerrainMaterial;
+                                doubleSided = 1;
                             } else if (surface.category() == SectionMeshData.CAT_CUTOUT) {
                                 matHandle = cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial;
+                                pNext = cutoutBlendExtPtr;
+                                doubleSided = 1;
                             } else if (surface.category() == SectionMeshData.CAT_TRANSLUCENT) {
                                 matHandle = translucentTerrainMaterial != 0 ? translucentTerrainMaterial : defaultTerrainMaterial;
+                                pNext = transBlendExtPtr;
                             } else {
                                 matHandle = solidTerrainMaterial != 0 ? solidTerrainMaterial : defaultTerrainMaterial;
+                                pNext = solidBlendExtPtr;
                             }
 
                             MeshInfoSurfaceTriangles surf = new MeshInfoSurfaceTriangles();
@@ -517,7 +572,7 @@ public final class ForgeRemixRenderer {
                             long mHandle = api.createMesh(mi);
                             if (mHandle != 0) {
                                 newMeshes.add(mHandle);
-                                long instHandle = api.sceneInstanceAdd(mHandle, sectionTransform.matrix, 0, 0, 0);
+                                long instHandle = api.sceneInstanceAdd(mHandle, sectionTransform.matrix, 0, doubleSided, pNext);
                                 if (instHandle != 0) {
                                     newInstances.add(instHandle);
                                 }
@@ -769,6 +824,18 @@ public final class ForgeRemixRenderer {
         if (terrainAtlasTexture != 0) {
             try { api.destroyTexture(terrainAtlasTexture); } catch (Exception ignored) {}
             terrainAtlasTexture = 0;
+        }
+        if (solidBlendExtPtr != 0) {
+            RemixBridge.freeExt(solidBlendExtPtr);
+            solidBlendExtPtr = 0;
+        }
+        if (cutoutBlendExtPtr != 0) {
+            RemixBridge.freeExt(cutoutBlendExtPtr);
+            cutoutBlendExtPtr = 0;
+        }
+        if (transBlendExtPtr != 0) {
+            RemixBridge.freeExt(transBlendExtPtr);
+            transBlendExtPtr = 0;
         }
         defaultTerrainMaterial = 0;
         if (interop != null) {
