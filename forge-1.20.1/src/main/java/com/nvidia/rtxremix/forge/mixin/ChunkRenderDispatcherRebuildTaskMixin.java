@@ -38,11 +38,39 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(targets = "net.minecraft.client.renderer.chunk.ChunkRenderDispatcher$RenderChunk$RebuildTask")
 public abstract class ChunkRenderDispatcherRebuildTaskMixin {
 
-    @Shadow(remap = false) @Final
-    ChunkRenderDispatcher.RenderChunk this$1;
-
     @Shadow
     protected RenderChunkRegion region;
+
+    private static java.lang.reflect.Field rtxremix$renderChunkField = null;
+    private static volatile boolean rtxremix$renderChunkFieldResolved = false;
+
+    private ChunkRenderDispatcher.RenderChunk rtxremix$getRenderChunk() {
+        if (!rtxremix$renderChunkFieldResolved) {
+            synchronized (ChunkRenderDispatcherRebuildTaskMixin.class) {
+                if (!rtxremix$renderChunkFieldResolved) {
+                    Class<?> current = this.getClass();
+                    while (current != null && current != Object.class) {
+                        for (java.lang.reflect.Field f : current.getDeclaredFields()) {
+                            if (ChunkRenderDispatcher.RenderChunk.class.isAssignableFrom(f.getType())) {
+                                f.setAccessible(true);
+                                rtxremix$renderChunkField = f;
+                                break;
+                            }
+                        }
+                        if (rtxremix$renderChunkField != null) break;
+                        current = current.getSuperclass();
+                    }
+                    rtxremix$renderChunkFieldResolved = true;
+                }
+            }
+        }
+        if (rtxremix$renderChunkField != null) {
+            try {
+                return (ChunkRenderDispatcher.RenderChunk) rtxremix$renderChunkField.get(this);
+            } catch (Exception ignored) {}
+        }
+        return null;
+    }
 
     private static final ThreadLocal<BlockDataQueue.CaptureToken> rtxremix$blockDataCaptureToken = new ThreadLocal<>();
     private static final ThreadLocal<Boolean> rtxremix$captureForBuild = ThreadLocal.withInitial(() -> Boolean.FALSE);
@@ -62,7 +90,10 @@ public abstract class ChunkRenderDispatcherRebuildTaskMixin {
         rtxremix$captureForBuild.set(capturing);
         if (!capturing) return;
 
-        BlockPos origin = this$1.getOrigin();
+        ChunkRenderDispatcher.RenderChunk renderChunk = rtxremix$getRenderChunk();
+        if (renderChunk == null) return;
+
+        BlockPos origin = renderChunk.getOrigin();
         SectionPos sectionPos = SectionPos.of(origin);
         rtxremix$sectionPos.set(sectionPos);
 
