@@ -236,6 +236,7 @@ public final class ForgeRemixRenderer {
 
                     // 1. Solid terrain material (opaque block atlas)
                     MaterialInfoOpaqueEXT solidOpaque = MaterialInfoOpaqueEXT.builder()
+                            .albedoConstant(1.0f, 1.0f, 1.0f)
                             .roughnessConstant(0.8f)
                             .metallicConstant(0.0f)
                             .useDrawCallAlphaState(true)
@@ -243,6 +244,7 @@ public final class ForgeRemixRenderer {
                     MaterialInfo solidInfo = MaterialInfo.builder()
                             .hash(0x4D41_545F_534F_4C49L) // "MAT_SOLI"
                             .albedoTexture(terrainAtlasTexture)
+                            .filterMode(0)
                             .opaqueExt(solidOpaque)
                             .build();
                     solidTerrainMaterial = api.createMaterial(solidInfo);
@@ -250,6 +252,7 @@ public final class ForgeRemixRenderer {
 
                     // 2. Cutout terrain material (foliage, leaves, tall grass, flowers)
                     MaterialInfoOpaqueEXT cutoutOpaque = MaterialInfoOpaqueEXT.builder()
+                            .albedoConstant(1.0f, 1.0f, 1.0f)
                             .roughnessConstant(0.8f)
                             .metallicConstant(0.0f)
                             .alphaTestType(4) // GREATER_OR_EQUAL
@@ -259,6 +262,7 @@ public final class ForgeRemixRenderer {
                     MaterialInfo cutoutInfo = MaterialInfo.builder()
                             .hash(0x4D41_545F_4355_544FL) // "MAT_CUTO"
                             .albedoTexture(terrainAtlasTexture)
+                            .filterMode(0)
                             .opaqueExt(cutoutOpaque)
                             .build();
                     cutoutTerrainMaterial = api.createMaterial(cutoutInfo);
@@ -321,6 +325,7 @@ public final class ForgeRemixRenderer {
                     MaterialInfo transInfo = MaterialInfo.builder()
                             .hash(0x4D41_545F_5452_414EL) // "MAT_TRAN"
                             .albedoTexture(terrainAtlasTexture)
+                            .filterMode(0)
                             .translucentExt(transExt)
                             .build();
                     translucentTerrainMaterial = api.createMaterial(transInfo);

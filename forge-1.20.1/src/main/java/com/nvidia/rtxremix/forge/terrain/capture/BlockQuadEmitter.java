@@ -12,6 +12,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.color.block.BlockColors;
 import net.minecraft.client.renderer.block.BlockRenderDispatcher;
 import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.renderer.ItemBlockRenderTypes;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.model.BakedModel;
@@ -25,6 +27,7 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.BlockAndTintGetter;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.SingleThreadedRandomSource;
@@ -159,6 +162,7 @@ public final class BlockQuadEmitter {
         Arrays.fill(opacity, 0);
         Arrays.fill(blockStateKnown, 0);
         Arrays.fill(fluidStateKnown, 0);
+        Arrays.fill(faceCullResults, (byte) 0);
         waterTopCellCacheFluid = null;
         waterColorKnownMask = 0;
         blockCount = 0;
@@ -294,9 +298,20 @@ public final class BlockQuadEmitter {
 
             random.setSeed(modelRandomSeed);
             List<BakedQuad> bakedQuads = model.getQuads(state, dir, random, modelData, null);
-
-            for (BakedQuad bq : bakedQuads) {
-                stageBakedQuad(bq, layerName, state, world, lx, ly, lz);
+            if (bakedQuads != null && !bakedQuads.isEmpty()) {
+                for (BakedQuad bq : bakedQuads) {
+                    stageBakedQuad(bq, layerName, state, world, lx, ly, lz);
+                }
+            } else {
+                for (RenderType rt : model.getRenderTypes(state, random, modelData)) {
+                    List<BakedQuad> rtQuads = model.getQuads(state, dir, random, modelData, rt);
+                    if (rtQuads != null && !rtQuads.isEmpty()) {
+                        String rtLayer = layerFromRenderType(rt, layerName);
+                        for (BakedQuad bq : rtQuads) {
+                            stageBakedQuad(bq, rtLayer, state, world, lx, ly, lz);
+                        }
+                    }
+                }
             }
         }
 
@@ -794,8 +809,24 @@ public final class BlockQuadEmitter {
         return tintCache[tintIndex];
     }
 
-    private static String classifyBlockLayer(BlockState state) {
+    public static String classifyBlockLayer(BlockState state) {
+        if (state.is(Blocks.GLASS) || state.is(Blocks.GLASS_PANE)) return "glass";
+        RenderType layer = ItemBlockRenderTypes.getChunkRenderType(state);
+        if (layer == RenderType.solid()) return "solid";
+        if (layer == RenderType.cutoutMipped()) return "cutout_mipped";
+        if (layer == RenderType.cutout()) return "cutout";
+        if (layer == RenderType.translucent()) return "translucent";
+        if (layer == RenderType.tripwire()) return "cutout";
         return "solid";
+    }
+
+    private static String layerFromRenderType(RenderType rt, String fallback) {
+        if (rt == RenderType.solid()) return "solid";
+        if (rt == RenderType.cutoutMipped()) return "cutout_mipped";
+        if (rt == RenderType.cutout()) return "cutout";
+        if (rt == RenderType.translucent()) return "translucent";
+        if (rt == RenderType.tripwire()) return "cutout";
+        return fallback;
     }
 
     private static int localIndex(int lx, int ly, int lz) {
