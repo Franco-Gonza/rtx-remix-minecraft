@@ -57,23 +57,38 @@ public final class RenderLayerUtils {
     private static synchronized void initReflection(Class<?> layerClass) {
         if (reflectionInitialized) return;
         try {
-            stateField = layerClass.getDeclaredField("state");
-            stateField.setAccessible(true);
-
-            Class<?> compositeStateClass = stateField.getType();
-            depthTestStateField = compositeStateClass.getDeclaredField("depthTestState");
-            depthTestStateField.setAccessible(true);
-
-            textureStateField = compositeStateClass.getDeclaredField("textureState");
-            textureStateField.setAccessible(true);
-
-            Class<?> textureStateClass = textureStateField.getType();
-            // cutoutTexture is in TextureStateShard subclass
-            for (Method m : textureStateClass.getMethods()) {
-                if ("cutoutTexture".equals(m.getName())) {
-                    cutoutTextureMethod = m;
-                    cutoutTextureMethod.setAccessible(true);
+            Class<?> curr = layerClass;
+            while (curr != null && curr != Object.class) {
+                try {
+                    stateField = curr.getDeclaredField("state");
+                    stateField.setAccessible(true);
                     break;
+                } catch (NoSuchFieldException e) {
+                    curr = curr.getSuperclass();
+                }
+            }
+
+            if (stateField != null) {
+                Class<?> compositeStateClass = stateField.getType();
+                for (Field f : compositeStateClass.getDeclaredFields()) {
+                    if (f.getName().equals("depthTestState") || f.getType().getSimpleName().contains("DepthTestState")) {
+                        depthTestStateField = f;
+                        depthTestStateField.setAccessible(true);
+                    } else if (f.getName().equals("textureState") || f.getType().getSimpleName().contains("TextureState")) {
+                        textureStateField = f;
+                        textureStateField.setAccessible(true);
+                    }
+                }
+
+                if (textureStateField != null) {
+                    Class<?> textureStateClass = textureStateField.getType();
+                    for (Method m : textureStateClass.getMethods()) {
+                        if ("cutoutTexture".equals(m.getName())) {
+                            cutoutTextureMethod = m;
+                            cutoutTextureMethod.setAccessible(true);
+                            break;
+                        }
+                    }
                 }
             }
         } catch (Exception e) {
@@ -127,6 +142,17 @@ public final class RenderLayerUtils {
             ResourceLocation loc = ResourceLocation.tryParse(candidate);
             if (loc != null) {
                 return Optional.of(loc);
+            }
+            int lastColon = candidate.lastIndexOf(':');
+            if (lastColon > 0) {
+                int secondLastColon = candidate.lastIndexOf(':', lastColon - 1);
+                if (secondLastColon >= 0) {
+                    String resStr = candidate.substring(secondLastColon + 1);
+                    loc = ResourceLocation.tryParse(resStr);
+                    if (loc != null) {
+                        return Optional.of(loc);
+                    }
+                }
             }
         }
         return Optional.empty();
