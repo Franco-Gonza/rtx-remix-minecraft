@@ -147,12 +147,8 @@ public class SkyRenderer {
         }
 
         try {
-            if (sunLightHandle != 0) {
-                try { api.destroyLight(sunLightHandle); } catch (Exception ignored) {}
-                sunLightHandle = 0;
-            }
-
             LightInfo lightInfo = LightInfo.builder()
+                    .hash(0x5355_4E5F_4C49_4748L) // "SUN_LIGH"
                     .radiance(radR, radG, radB)
                     .distantExt(LightInfoDistantEXT.builder()
                             .direction(dirX, dirY, dirZ)
@@ -160,7 +156,11 @@ public class SkyRenderer {
                             .volumetricRadianceScale(1.0f)
                             .build())
                     .build();
-            sunLightHandle = api.createLight(lightInfo);
+            long newHandle = api.createLight(lightInfo);
+            if (sunLightHandle != 0 && sunLightHandle != newHandle) {
+                try { api.destroyLight(sunLightHandle); } catch (Exception ignored) {}
+            }
+            sunLightHandle = newHandle;
             if (sunLightHandle != 0) {
                 api.drawLightInstance(sunLightHandle);
             }
@@ -199,6 +199,7 @@ public class SkyRenderer {
                 LightInfoDomeEXT domeExt = new LightInfoDomeEXT();
                 domeExt.setColorTexture(skyTextureHandle);
                 LightInfo lightInfo = LightInfo.builder()
+                        .hash(0x534B_595F_444F_4D45L) // "SKY_DOME"
                         .radiance(multiplier, multiplier, multiplier)
                         .domeExt(domeExt)
                         .build();
@@ -223,21 +224,24 @@ public class SkyRenderer {
         }
 
         try {
-            if (skyAmbientRectHandle == 0) {
-                LightInfoRectEXT rectExt = LightInfoRectEXT.builder()
-                        .position(0.0f, SKY_AMBIENT_RECT_Y, 0.0f)
-                        .xAxis(1, 0, 0)
-                        .xSize(SKY_AMBIENT_RECT_HALF_SIZE)
-                        .yAxis(0, 0, 1)
-                        .ySize(SKY_AMBIENT_RECT_HALF_SIZE)
-                        .direction(0, -1, 0)
-                        .build();
-                LightInfo lightInfo = LightInfo.builder()
-                        .radiance(r, g, b)
-                        .rectExt(rectExt)
-                        .build();
-                skyAmbientRectHandle = api.createLight(lightInfo);
+            LightInfoRectEXT rectExt = LightInfoRectEXT.builder()
+                    .position(0.0f, SKY_AMBIENT_RECT_Y, 0.0f)
+                    .xAxis(1, 0, 0)
+                    .xSize(SKY_AMBIENT_RECT_HALF_SIZE)
+                    .yAxis(0, 0, 1)
+                    .ySize(SKY_AMBIENT_RECT_HALF_SIZE)
+                    .direction(0, -1, 0)
+                    .build();
+            LightInfo lightInfo = LightInfo.builder()
+                    .hash(0x534B_595F_414D_4249L) // "SKY_AMBI"
+                    .radiance(r, g, b)
+                    .rectExt(rectExt)
+                    .build();
+            long newHandle = api.createLight(lightInfo);
+            if (skyAmbientRectHandle != 0 && skyAmbientRectHandle != newHandle) {
+                try { api.destroyLight(skyAmbientRectHandle); } catch (Exception ignored) {}
             }
+            skyAmbientRectHandle = newHandle;
 
             if (skyAmbientRectHandle != 0) {
                 api.drawLightInstance(skyAmbientRectHandle);
