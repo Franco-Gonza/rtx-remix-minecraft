@@ -203,6 +203,10 @@ public final class ForgeRemixRenderer {
             boolean isUnderwater = camera.getFluidInCamera() == net.minecraft.world.level.material.FogType.WATER;
             confLayerDriver.update(client.level, pos, isUnderwater, 1.0f / 60.0f);
         }
+
+        if (entityPass != null && entitySubmitter != null) {
+            entityPass.beginFrame(entitySubmitter);
+        }
     }
 
     public void updateTerrainMaterialIfReady() {
@@ -412,7 +416,6 @@ public final class ForgeRemixRenderer {
         if (client == null || client.getEntityRenderDispatcher() == null) {
             return false;
         }
-        entityPass.beginFrame(entitySubmitter);
         entityPass.captureAndSubmit(entity, client.getEntityRenderDispatcher(), tickDelta, entitySubmitter);
         return true;
     }

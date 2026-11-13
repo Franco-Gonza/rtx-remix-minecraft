@@ -267,14 +267,46 @@ public class RemixEntitySubmitter {
         MaterialInfo info = new MaterialInfo();
         info.albedoTexture = textureHandle;
         info.hash = Objects.hash(textureId, surfaceMode);
+        info.filterMode = 0; // Nearest neighbor for pixel art textures
 
         if (surfaceMode == RenderLayerUtils.SurfaceMode.CUTOUT) {
-            info.opaqueExt = new MaterialInfoOpaqueEXT();
-            info.opaqueExt.alphaTestType = 7; // ALPHATEST_GREATER_OR_EQUAL
-            info.opaqueExt.alphaReferenceValue = (byte) 128;
+            MaterialInfoOpaqueEXT opaque = MaterialInfoOpaqueEXT.builder()
+                    .albedoConstant(1.0f, 1.0f, 1.0f)
+                    .roughnessConstant(0.8f)
+                    .metallicConstant(0.0f)
+                    .alphaTestType(4) // GREATER_OR_EQUAL
+                    .alphaReferenceValue(128)
+                    .useDrawCallAlphaState(true)
+                    .build();
+            info.opaqueExt = opaque;
         } else if (surfaceMode == RenderLayerUtils.SurfaceMode.EMISSIVE) {
+            MaterialInfoOpaqueEXT opaque = MaterialInfoOpaqueEXT.builder()
+                    .albedoConstant(1.0f, 1.0f, 1.0f)
+                    .roughnessConstant(0.8f)
+                    .metallicConstant(0.0f)
+                    .blendEnabled(true)
+                    .blendType(MaterialInfoOpaqueEXT.BLEND_TYPE_ALPHA_EMISSIVE)
+                    .build();
+            info.opaqueExt = opaque;
             info.emissiveTexture = textureHandle;
-            info.emissiveIntensity = 50.0f;
+            info.emissiveIntensity = 25.0f;
+        } else if (surfaceMode == RenderLayerUtils.SurfaceMode.TRANSLUCENT) {
+            MaterialInfoTranslucentEXT trans = MaterialInfoTranslucentEXT.builder()
+                    .refractiveIndex(1.0f)
+                    .transmittanceColor(1.0f, 1.0f, 1.0f)
+                    .transmittanceMeasurementDistance(1.0f)
+                    .useDiffuseLayer(true)
+                    .build();
+            info.translucentExt = trans;
+        } else {
+            // SOLID / OPAQUE mobs (zombies, creepers, cows, player, armor, etc.)
+            MaterialInfoOpaqueEXT opaque = MaterialInfoOpaqueEXT.builder()
+                    .albedoConstant(1.0f, 1.0f, 1.0f)
+                    .roughnessConstant(0.8f)
+                    .metallicConstant(0.0f)
+                    .useDrawCallAlphaState(true)
+                    .build();
+            info.opaqueExt = opaque;
         }
 
         try {
