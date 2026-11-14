@@ -281,7 +281,7 @@ public final class RemixParticleRenderer {
             surf.indexBuffer = indexBuffer;
             surf.indexCount = count * INDICES_PER_PARTICLE;
             surf.material = materialHandle;
-            surf.flags = 0; // Direct atlas sampling without UV re-normalization
+            surf.flags = com.nvidia.rtxremix.MeshInfoSurfaceTriangles.TEXCOORD_BOUNDS;
 
             long meshHash = MESH_HASH_COUNTER.incrementAndGet();
             MeshInfo mi = MeshInfo.builder()
