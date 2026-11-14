@@ -591,20 +591,8 @@ public final class ForgeRemixRenderer {
                         if (vCount <= 0 || iCount <= 0) continue;
 
                         java.nio.ByteBuffer vBuf = surface.vertexBuffer();
-                        java.nio.ByteBuffer iBuf = com.nvidia.rtxremix.forge.util.DirectBufferPool.acquire(iCount * Integer.BYTES);
+                        java.nio.ByteBuffer iBuf = com.nvidia.rtxremix.forge.util.CanonicalIndexBuffer.getBuffer(iCount);
                         try {
-                            int quads = vCount / 4;
-                            for (int q = 0; q < quads; q++) {
-                                int base = q * 4;
-                                iBuf.putInt(base);
-                                iBuf.putInt(base + 2);
-                                iBuf.putInt(base + 1);
-                                iBuf.putInt(base);
-                                iBuf.putInt(base + 3);
-                                iBuf.putInt(base + 2);
-                            }
-                            iBuf.flip();
-
                             long matHandle;
                             int doubleSided = 1;
                             int categoryFlags = 0;
@@ -645,8 +633,6 @@ public final class ForgeRemixRenderer {
                             }
                         } catch (Exception e) {
                             LOGGER.error("Failed creating terrain mesh for section {}", pos, e);
-                        } finally {
-                            com.nvidia.rtxremix.forge.util.DirectBufferPool.release(iBuf);
                         }
                     }
                     if (!newMeshes.isEmpty()) {
@@ -1013,6 +999,7 @@ public final class ForgeRemixRenderer {
             interop.destroy();
             interop = null;
         }
+        com.nvidia.rtxremix.forge.util.CanonicalIndexBuffer.free();
         if (api != null) {
             api.shutdown();
             api = null;
