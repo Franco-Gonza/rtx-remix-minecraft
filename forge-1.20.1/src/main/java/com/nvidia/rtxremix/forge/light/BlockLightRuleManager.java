@@ -5,7 +5,13 @@
 package com.nvidia.rtxremix.forge.light;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.LanternBlock;
+import net.minecraft.world.level.block.RedstoneTorchBlock;
+import net.minecraft.world.level.block.RedstoneWallTorchBlock;
+import net.minecraft.world.level.block.WallTorchBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
@@ -13,10 +19,13 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Manages block-attached light rules for RTX Remix.
+ * Manages block-attached light rules for RTX Remix on Forge 1.20.1.
  */
 public final class BlockLightRuleManager {
     public static final float RADIANCE_PER_LIGHT_LEVEL = 5.0f;
+    public static final float TORCH_AUTHORED_INTENSITY_MULTIPLIER = 7.5f;
+    public static final float THIN_SPHERE_INTENSITY_SCALE = 3.0f;
+    public static final float TORCH_RADIUS = 0.08f;
 
     public interface ModelSampler {
         float[] centroid();
@@ -34,21 +43,108 @@ public final class BlockLightRuleManager {
         int emission = state.getLightEmission();
         if (emission <= 0) return Collections.emptyList();
 
-        float[] center = sampler != null ? sampler.centroid() : new float[]{0.5f, 0.5f, 0.5f};
-        float worldX = pos.getX() + center[0];
-        float worldY = pos.getY() + center[1];
-        float worldZ = pos.getZ() + center[2];
+        float x = 0.5f;
+        float y = 0.5f;
+        float z = 0.5f;
+        float radius = 0.15f;
+        float colorR = 1.0f;
+        float colorG = 0.9f;
+        float colorB = 0.7f;
+        float intensityScale = 15.0f;
+        String ruleName = "emissive_block";
 
-        ResourceLocation ruleId = new ResourceLocation("minecraft", "emissive_block");
+        if (state.is(Blocks.TORCH)) {
+            ruleName = "torch";
+            x = 0.5f; y = 0.7f; z = 0.5f;
+            radius = TORCH_RADIUS;
+            colorR = 1.0f; colorG = 0.35f; colorB = 0.1f;
+            intensityScale = TORCH_AUTHORED_INTENSITY_MULTIPLIER * THIN_SPHERE_INTENSITY_SCALE;
+        } else if (state.is(Blocks.WALL_TORCH)) {
+            ruleName = "wall_torch";
+            Direction facing = state.getValue(WallTorchBlock.FACING).getOpposite();
+            x = 0.5f + 0.27f * facing.getStepX();
+            y = 0.92f;
+            z = 0.5f + 0.27f * facing.getStepZ();
+            radius = TORCH_RADIUS;
+            colorR = 1.0f; colorG = 0.35f; colorB = 0.1f;
+            intensityScale = TORCH_AUTHORED_INTENSITY_MULTIPLIER * THIN_SPHERE_INTENSITY_SCALE;
+        } else if (state.is(Blocks.SOUL_TORCH)) {
+            ruleName = "soul_torch";
+            x = 0.5f; y = 0.7f; z = 0.5f;
+            radius = TORCH_RADIUS;
+            colorR = 0.05f; colorG = 0.2f; colorB = 1.0f;
+            intensityScale = TORCH_AUTHORED_INTENSITY_MULTIPLIER * THIN_SPHERE_INTENSITY_SCALE;
+        } else if (state.is(Blocks.SOUL_WALL_TORCH)) {
+            ruleName = "soul_wall_torch";
+            Direction facing = state.getValue(WallTorchBlock.FACING).getOpposite();
+            x = 0.5f + 0.27f * facing.getStepX();
+            y = 0.92f;
+            z = 0.5f + 0.27f * facing.getStepZ();
+            radius = TORCH_RADIUS;
+            colorR = 0.05f; colorG = 0.2f; colorB = 1.0f;
+            intensityScale = TORCH_AUTHORED_INTENSITY_MULTIPLIER * THIN_SPHERE_INTENSITY_SCALE;
+        } else if (state.is(Blocks.REDSTONE_TORCH)) {
+            ruleName = "redstone_torch";
+            x = 0.5f; y = 0.7f; z = 0.5f;
+            radius = 0.07f;
+            colorR = 1.0f; colorG = 0.15f; colorB = 0.02f;
+            intensityScale = TORCH_AUTHORED_INTENSITY_MULTIPLIER * THIN_SPHERE_INTENSITY_SCALE;
+        } else if (state.is(Blocks.REDSTONE_WALL_TORCH)) {
+            ruleName = "redstone_wall_torch";
+            Direction facing = state.getValue(RedstoneWallTorchBlock.FACING).getOpposite();
+            x = 0.5f + 0.27f * facing.getStepX();
+            y = 0.92f;
+            z = 0.5f + 0.27f * facing.getStepZ();
+            radius = 0.07f;
+            colorR = 1.0f; colorG = 0.15f; colorB = 0.02f;
+            intensityScale = TORCH_AUTHORED_INTENSITY_MULTIPLIER * THIN_SPHERE_INTENSITY_SCALE;
+        } else if (state.is(Blocks.CAMPFIRE)) {
+            ruleName = "campfire";
+            x = 0.5f; y = 0.55f; z = 0.5f;
+            radius = 0.25f;
+            colorR = 1.0f; colorG = 0.15f; colorB = 0.05f;
+            intensityScale = 22.5f;
+        } else if (state.is(Blocks.SOUL_CAMPFIRE)) {
+            ruleName = "soul_campfire";
+            x = 0.5f; y = 0.55f; z = 0.5f;
+            radius = 0.25f;
+            colorR = 0.05f; colorG = 0.2f; colorB = 1.0f;
+            intensityScale = 22.5f;
+        } else if (state.is(Blocks.LANTERN)) {
+            ruleName = "lantern";
+            boolean hanging = state.hasProperty(LanternBlock.HANGING) && state.getValue(LanternBlock.HANGING);
+            x = 0.5f; y = hanging ? 0.35f : 0.25f; z = 0.5f;
+            radius = 0.10f;
+            colorR = 1.0f; colorG = 0.75f; colorB = 0.4f;
+            intensityScale = 15.0f;
+        } else if (state.is(Blocks.SOUL_LANTERN)) {
+            ruleName = "soul_lantern";
+            boolean hanging = state.hasProperty(LanternBlock.HANGING) && state.getValue(LanternBlock.HANGING);
+            x = 0.5f; y = hanging ? 0.35f : 0.25f; z = 0.5f;
+            radius = 0.10f;
+            colorR = 0.05f; colorG = 0.2f; colorB = 1.0f;
+            intensityScale = 15.0f;
+        } else {
+            if (sampler != null) {
+                float[] center = sampler.centroid();
+                x = center[0]; y = center[1]; z = center[2];
+            }
+        }
+
+        float worldX = pos.getX() + x;
+        float worldY = pos.getY() + y;
+        float worldZ = pos.getZ() + z;
+
+        ResourceLocation ruleId = new ResourceLocation("minecraft", ruleName);
         BlockLightKey key = new BlockLightKey(pos.immutable(), ruleId, 0);
 
         List<LightEntry> list = new ArrayList<>(1);
         list.add(new LightEntry(
                 key, emission, state.getBlock(), LightShape.SPHERE,
                 worldX, worldY, worldZ,
-                1.0f, 0.9f, 0.7f, true,
-                emission * RADIANCE_PER_LIGHT_LEVEL, true,
-                0.15f,
+                colorR, colorG, colorB, true,
+                emission * RADIANCE_PER_LIGHT_LEVEL * intensityScale, true,
+                radius,
                 0, 1, 0, 0,
                 1, 0, 0, 0,
                 0, 0, 1, 0,

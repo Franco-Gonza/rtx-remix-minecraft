@@ -629,7 +629,7 @@ public final class ForgeRemixRenderer {
                             surf.material = matHandle;
                             surf.flags = 0; // Direct atlas sampling without UV re-normalization
 
-                            long hash = (((long) pos.hashCode()) << 32) ^ surface.category() ^ vCount;
+                            long hash = java.util.concurrent.ThreadLocalRandom.current().nextLong() | 1L;
                             MeshInfo mi = MeshInfo.builder()
                                     .hash(hash)
                                     .surfaces(surf)
@@ -670,7 +670,7 @@ public final class ForgeRemixRenderer {
                             baseIntensity *= entry.authoredIntensityMultiplier();
 
                             LightInfo.Builder lib = LightInfo.builder()
-                                    .hash(entry.key() != null ? (long) entry.key().hashCode() : 0)
+                                    .hash(java.util.concurrent.ThreadLocalRandom.current().nextLong() | 1L)
                                     .radiance(r * baseIntensity, g * baseIntensity, b * baseIntensity);
 
                             switch (entry.shape()) {
@@ -743,8 +743,31 @@ public final class ForgeRemixRenderer {
                 entityPass.finishFrame(client.level, client.getEntityRenderDispatcher(), 1.0f, entitySubmitter, client.gameRenderer.getMainCamera());
             }
 
-            // Draw all active terrain block lights
-            for (java.util.List<Long> lights : sectionLights.values()) {
+            // Draw all active terrain block lights within distance cull
+            int camSecX = 0, camSecY = 0, camSecZ = 0;
+            boolean hasCam = false;
+            if (client.gameRenderer != null && client.gameRenderer.getMainCamera() != null) {
+                Vec3 camPos = client.gameRenderer.getMainCamera().getPosition();
+                if (camPos != null) {
+                    camSecX = SectionPos.blockToSectionCoord((int) camPos.x);
+                    camSecY = SectionPos.blockToSectionCoord((int) camPos.y);
+                    camSecZ = SectionPos.blockToSectionCoord((int) camPos.z);
+                    hasCam = true;
+                }
+            }
+
+            final int maxLightSecDist = 5; // ~80 blocks Chebyshev cull radius
+            for (java.util.Map.Entry<SectionPos, java.util.List<Long>> entry : sectionLights.entrySet()) {
+                SectionPos sPos = entry.getKey();
+                if (hasCam) {
+                    int dx = Math.abs(sPos.x() - camSecX);
+                    int dy = Math.abs(sPos.y() - camSecY);
+                    int dz = Math.abs(sPos.z() - camSecZ);
+                    if (dx > maxLightSecDist || dy > maxLightSecDist || dz > maxLightSecDist) {
+                        continue;
+                    }
+                }
+                java.util.List<Long> lights = entry.getValue();
                 if (lights != null) {
                     for (int i = 0; i < lights.size(); i++) {
                         long handle = lights.get(i);
@@ -849,6 +872,47 @@ public final class ForgeRemixRenderer {
 
     public boolean isSceneSubmitted() {
         return submitFrameCalled;
+    }
+
+    public void unloadChunkColumn(int cx, int cz) {
+        if (!isInitialized()) return;
+        if (client != null && !client.isSameThread()) {
+            client.execute(() -> unloadChunkColumn(cx, cz));
+            return;
+        }
+        int minY = -8;
+        int maxY = 24;
+        if (client != null && client.level != null) {
+            minY = client.level.getMinSection();
+            maxY = client.level.getMaxSection();
+        }
+        for (int y = minY; y <= maxY; y++) {
+            SectionPos pos = SectionPos.of(cx, y, cz);
+            java.util.List<Long> oldInstances = sectionInstances.remove(pos);
+            if (oldInstances != null) {
+                for (Long inst : oldInstances) {
+                    if (inst != null && inst != 0 && api != null) {
+                        try { api.sceneInstanceRemove(inst); } catch (Exception ignored) {}
+                    }
+                }
+            }
+            java.util.List<Long> oldMeshes = sectionMeshes.remove(pos);
+            if (oldMeshes != null) {
+                for (Long m : oldMeshes) {
+                    if (m != null && m != 0 && api != null) {
+                        try { api.destroyMesh(m); } catch (Exception ignored) {}
+                    }
+                }
+            }
+            java.util.List<Long> oldLights = sectionLights.remove(pos);
+            if (oldLights != null) {
+                for (Long l : oldLights) {
+                    if (l != null && l != 0 && api != null) {
+                        try { api.destroyLight(l); } catch (Exception ignored) {}
+                    }
+                }
+            }
+        }
     }
 
     public void clearLevelState() {

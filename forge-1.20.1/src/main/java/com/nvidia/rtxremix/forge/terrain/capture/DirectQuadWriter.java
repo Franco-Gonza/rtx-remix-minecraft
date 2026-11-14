@@ -319,10 +319,16 @@ public final class DirectQuadWriter {
                 stageCategory[i] = SectionMeshData.CAT_OVERLAY;
             } else if (isBlendedLayer(layer)) {
                 stageCategory[i] = SectionMeshData.CAT_TRANSLUCENT;
-            } else if (layerType == solidType || (sprite != null && !sprite.hasTransparency())) {
+            } else if (layerType == solidType) {
                 stageCategory[i] = SectionMeshData.CAT_SOLID;
+            } else if (layerType == BlockTextureManager.L_CUTOUT || layerType == BlockTextureManager.L_CUTOUT_MIPPED) {
+                if (sprite != null && !sprite.hasTransparency()) {
+                    stageCategory[i] = SectionMeshData.CAT_SOLID;
+                } else {
+                    stageCategory[i] = SectionMeshData.CAT_CUTOUT;
+                }
             } else {
-                stageCategory[i] = SectionMeshData.CAT_CUTOUT;
+                stageCategory[i] = SectionMeshData.CAT_SOLID;
             }
         }
     }

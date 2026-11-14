@@ -13,6 +13,7 @@ import net.minecraftforge.client.event.RegisterClientCommandsEvent;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.level.ChunkEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,6 +48,14 @@ public final class ClientEvents {
     public void onPlayerLogout(ClientPlayerNetworkEvent.LoggingOut event) {
         LOGGER.info("Player disconnected from level. Tearing down RTX Remix world state...");
         ForgeRemixRenderer.getInstance().clearLevelState();
+    }
+
+    @SubscribeEvent
+    public void onChunkUnload(ChunkEvent.Unload event) {
+        if (event.getLevel() != null && event.getLevel().isClientSide() && event.getChunk() != null) {
+            net.minecraft.world.level.ChunkPos pos = event.getChunk().getPos();
+            ForgeRemixRenderer.getInstance().unloadChunkColumn(pos.x, pos.z);
+        }
     }
 
     @SubscribeEvent

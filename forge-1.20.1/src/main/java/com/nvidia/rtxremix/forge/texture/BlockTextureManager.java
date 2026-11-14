@@ -4,6 +4,10 @@
  */
 package com.nvidia.rtxremix.forge.texture;
 
+import com.mojang.blaze3d.platform.NativeImage;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.texture.TextureAtlas;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.resources.ResourceLocation;
 
 import java.util.Map;
@@ -58,10 +62,50 @@ public class BlockTextureManager {
     public SpriteEntry getSpriteById(ResourceLocation id) {
         if (id == null) return null;
         return spriteById.computeIfAbsent(id, loc -> {
+            boolean transparent = false;
+            try {
+                Minecraft mc = Minecraft.getInstance();
+                if (mc != null && mc.getModelManager() != null) {
+                    TextureAtlas atlas = mc.getModelManager().getAtlas(TextureAtlas.LOCATION_BLOCKS);
+                    if (atlas != null) {
+                        TextureAtlasSprite sprite = atlas.getSprite(loc);
+                        if (sprite != null && sprite.contents() != null) {
+                            NativeImage img = sprite.contents().getOriginalImage();
+                            if (img != null) {
+                                int w = sprite.contents().width();
+                                int h = sprite.contents().height();
+                                for (int y = 0; y < h && !transparent; y++) {
+                                    for (int x = 0; x < w; x++) {
+                                        int abgr = img.getPixelRGBA(x, y);
+                                        int a = (abgr >> 24) & 0xFF;
+                                        if (a < 250) {
+                                            transparent = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {}
+
             String path = loc.getPath();
-            boolean transparent = path.contains("leaves") || path.contains("sapling")
-                    || path.contains("glass") || path.contains("water") || path.contains("door")
-                    || path.contains("grass") || path.contains("flower");
+            if (!transparent) {
+                transparent = path.contains("leaves") || path.contains("sapling")
+                        || path.contains("glass") || path.contains("water") || path.contains("door")
+                        || path.contains("grass") || path.contains("flower")
+                        || path.contains("torch") || path.contains("cactus")
+                        || path.contains("plant") || path.contains("stem")
+                        || path.contains("crop") || path.contains("rail")
+                        || path.contains("chain") || path.contains("lantern")
+                        || path.contains("iron_bars") || path.contains("ladder")
+                        || path.contains("vine") || path.contains("lichen")
+                        || path.contains("sugar_cane") || path.contains("fern")
+                        || path.contains("mushroom") || path.contains("lily_pad")
+                        || path.contains("nether_wart") || path.contains("coral")
+                        || path.contains("scaffolding") || path.contains("campfire");
+            }
             boolean sss = path.contains("leaves") || path.contains("plant") || path.contains("foliage");
             return new SpriteEntry(loc, transparent, sss);
         });
