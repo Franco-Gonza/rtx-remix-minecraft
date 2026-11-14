@@ -27,6 +27,7 @@ public abstract class SpriteContentsUploadMixin {
 
         NativeImage mip0 = mips[0];
         long basePtr = ((NativeImageAccessor) (Object) mip0).getPointer();
+        if (basePtr == 0) return;
         int imgWidth = mip0.getWidth();
         int imgHeight = mip0.getHeight();
         int frameWidth = this.width();

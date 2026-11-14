@@ -319,7 +319,7 @@ public final class DirectQuadWriter {
                 stageCategory[i] = SectionMeshData.CAT_OVERLAY;
             } else if (isBlendedLayer(layer)) {
                 stageCategory[i] = SectionMeshData.CAT_TRANSLUCENT;
-            } else if (layerType == solidType) {
+            } else if (layerType == solidType || (sprite != null && !sprite.hasTransparency())) {
                 stageCategory[i] = SectionMeshData.CAT_SOLID;
             } else if (layerType == BlockTextureManager.L_CUTOUT || layerType == BlockTextureManager.L_CUTOUT_MIPPED) {
                 stageCategory[i] = SectionMeshData.CAT_CUTOUT;
@@ -351,20 +351,36 @@ public final class DirectQuadWriter {
 
         if (stageColor[a] != stageColor[b]
                 || !Objects.equals(stageSpriteId[a], stageSpriteId[b])
-                || !Objects.equals(stageLayer[a], stageLayer[b])) {
+                || !Objects.equals(stageLayer[a], stageLayer[b])
+                || stageSU0[a] != stageSU0[b]
+                || stageSV0[a] != stageSV0[b]
+                || stageSU1[a] != stageSU1[b]
+                || stageSV1[a] != stageSV1[b]) {
             return false;
         }
 
-        int aPos = a * 12;
-        int bPos = b * 12;
-        for (int v = 0; v < 4; v++) {
-            int ai = aPos + v * 3;
-            int bi = bPos + ((4 - v) % 4) * 3;
-            if (Math.abs(stagePos[ai] - stagePos[bi]) > 1.0E-4f
-                    || Math.abs(stagePos[ai + 1] - stagePos[bi + 1]) > 1.0E-4f
-                    || Math.abs(stagePos[ai + 2] - stagePos[bi + 2]) > 1.0E-4f) {
-                return false;
+        return haveSameUnorderedPositions(a * 12, b * 12);
+    }
+
+    private boolean haveSameUnorderedPositions(int aPos, int bPos) {
+        int matchedVertices = 0;
+        for (int aVertex = 0; aVertex < 4; aVertex++) {
+            int ai = aPos + aVertex * 3;
+            boolean matched = false;
+            for (int bVertex = 0; bVertex < 4; bVertex++) {
+                int bit = 1 << bVertex;
+                if ((matchedVertices & bit) != 0) continue;
+
+                int bi = bPos + bVertex * 3;
+                if (Math.abs(stagePos[ai] - stagePos[bi]) <= 1.0E-4f
+                        && Math.abs(stagePos[ai + 1] - stagePos[bi + 1]) <= 1.0E-4f
+                        && Math.abs(stagePos[ai + 2] - stagePos[bi + 2]) <= 1.0E-4f) {
+                    matchedVertices |= bit;
+                    matched = true;
+                    break;
+                }
             }
+            if (!matched) return false;
         }
         return true;
     }

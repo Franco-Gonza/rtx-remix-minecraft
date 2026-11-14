@@ -21,6 +21,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
@@ -28,6 +29,7 @@ import net.minecraft.world.level.BlockAndTintGetter;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.LeavesBlock;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.SingleThreadedRandomSource;
@@ -811,21 +813,36 @@ public final class BlockQuadEmitter {
 
     public static String classifyBlockLayer(BlockState state) {
         if (state.is(Blocks.GLASS) || state.is(Blocks.GLASS_PANE)) return "glass";
+        if (state.getBlock() instanceof LeavesBlock || state.is(BlockTags.LEAVES)) {
+            return "cutout_mipped";
+        }
         RenderType layer = ItemBlockRenderTypes.getChunkRenderType(state);
-        if (layer == RenderType.solid()) return "solid";
-        if (layer == RenderType.cutoutMipped()) return "cutout_mipped";
-        if (layer == RenderType.cutout()) return "cutout";
-        if (layer == RenderType.translucent()) return "translucent";
-        if (layer == RenderType.tripwire()) return "cutout";
+        if (RenderType.solid().equals(layer)) return "solid";
+        if (RenderType.cutoutMipped().equals(layer)) return "cutout_mipped";
+        if (RenderType.cutout().equals(layer)) return "cutout";
+        if (RenderType.translucent().equals(layer)) return "translucent";
+        if (RenderType.tripwire().equals(layer)) return "cutout";
+        if (layer != null) {
+            String name = layer.toString().toLowerCase();
+            if (name.contains("cutout_mipped") || name.contains("cutoutmipped")) return "cutout_mipped";
+            if (name.contains("cutout")) return "cutout";
+            if (name.contains("translucent")) return "translucent";
+        }
         return "solid";
     }
 
     private static String layerFromRenderType(RenderType rt, String fallback) {
-        if (rt == RenderType.solid()) return "solid";
-        if (rt == RenderType.cutoutMipped()) return "cutout_mipped";
-        if (rt == RenderType.cutout()) return "cutout";
-        if (rt == RenderType.translucent()) return "translucent";
-        if (rt == RenderType.tripwire()) return "cutout";
+        if (rt == null) return fallback;
+        if (RenderType.solid().equals(rt)) return "solid";
+        if (RenderType.cutoutMipped().equals(rt)) return "cutout_mipped";
+        if (RenderType.cutout().equals(rt)) return "cutout";
+        if (RenderType.translucent().equals(rt)) return "translucent";
+        if (RenderType.tripwire().equals(rt)) return "cutout";
+        String name = rt.toString().toLowerCase();
+        if (name.contains("cutout_mipped") || name.contains("cutoutmipped")) return "cutout_mipped";
+        if (name.contains("cutout")) return "cutout";
+        if (name.contains("translucent")) return "translucent";
+        if (name.contains("solid")) return "solid";
         return fallback;
     }
 

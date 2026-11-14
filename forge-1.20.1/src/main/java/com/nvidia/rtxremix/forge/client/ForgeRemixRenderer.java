@@ -42,12 +42,16 @@ public final class ForgeRemixRenderer {
     private long defaultTerrainMaterial = 0;
     private long solidTerrainMaterial = 0;
     private long cutoutTerrainMaterial = 0;
+    private long cutoutMippedTerrainMaterial = 0;
     private long waterMaterial = 0;
     private long waterCameraMediumMaterial = 0;
     private long lastCameraMediumHandle = 0;
     private long translucentTerrainMaterial = 0;
     private long waterNormalTexture = 0;
     private long waterWhiteTexture = 0;
+    private long solidBlendPNext = 0;
+    private long cutoutBlendPNext = 0;
+    private long overlayBlendPNext = 0;
     private float lastPartialTicks = 0.0f;
     private net.minecraft.client.multiplayer.ClientLevel lastLevel = null;
 
@@ -171,6 +175,7 @@ public final class ForgeRemixRenderer {
             confLayerDriver.acquireAll(api, net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get());
             active = true;
             initialized = true;
+            com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.setActive(true);
             LOGGER.info("NVIDIA RTX Remix initialized successfully on Forge 1.20.1.");
             return true;
         } catch (Exception e) {
@@ -345,7 +350,7 @@ public final class ForgeRemixRenderer {
                             .albedoConstant(1.0f, 1.0f, 1.0f)
                             .roughnessConstant(0.8f)
                             .metallicConstant(0.0f)
-                            .useDrawCallAlphaState(false)
+                            .useDrawCallAlphaState(true)
                             .build();
                     MaterialInfo solidInfo = MaterialInfo.builder()
                             .hash(0x4D41_545F_534F_4C49L) // "MAT_SOLI"
@@ -356,14 +361,14 @@ public final class ForgeRemixRenderer {
                     solidTerrainMaterial = api.createMaterial(solidInfo);
                     defaultTerrainMaterial = solidTerrainMaterial;
 
-                    // 2. Cutout terrain material (foliage, leaves, tall grass, flowers)
+                    // 2. Cutout terrain material (foliage, torches, tall grass, flowers)
                     MaterialInfoOpaqueEXT cutoutOpaque = MaterialInfoOpaqueEXT.builder()
                             .albedoConstant(1.0f, 1.0f, 1.0f)
                             .roughnessConstant(0.8f)
                             .metallicConstant(0.0f)
-                            .alphaTestType(4) // GREATER_OR_EQUAL
+                            .alphaTestType(4) // GREATER
                             .alphaReferenceValue(128)
-                            .useDrawCallAlphaState(false)
+                            .useDrawCallAlphaState(true)
                             .build();
                     MaterialInfo cutoutInfo = MaterialInfo.builder()
                             .hash(0x4D41_545F_4355_544FL) // "MAT_CUTO"
@@ -372,6 +377,34 @@ public final class ForgeRemixRenderer {
                             .opaqueExt(cutoutOpaque)
                             .build();
                     cutoutTerrainMaterial = api.createMaterial(cutoutInfo);
+
+                    // 2b. Cutout mipped terrain material (leaves, mipmapped foliage)
+                    MaterialInfoOpaqueEXT cutoutMippedOpaque = MaterialInfoOpaqueEXT.builder()
+                            .albedoConstant(1.0f, 1.0f, 1.0f)
+                            .roughnessConstant(0.8f)
+                            .metallicConstant(0.0f)
+                            .alphaTestType(4) // GREATER
+                            .alphaReferenceValue(128)
+                            .useDrawCallAlphaState(true)
+                            .build();
+                    MaterialInfo cutoutMippedInfo = MaterialInfo.builder()
+                            .hash(0x4D41_545F_4355_544DL) // "MAT_CUTM"
+                            .albedoTexture(terrainAtlasTexture)
+                            .filterMode(1) // Mipmapped / bilinear
+                            .opaqueExt(cutoutMippedOpaque)
+                            .build();
+                    cutoutMippedTerrainMaterial = api.createMaterial(cutoutMippedInfo);
+
+                    // Pre-allocate native blend extension pointers for terrain categories (zero hot-path allocation)
+                    if (solidBlendPNext == 0) {
+                        solidBlendPNext = InstanceInfoBlendEXT.textureTimesVertexColor().allocNative(0);
+                    }
+                    if (cutoutBlendPNext == 0) {
+                        cutoutBlendPNext = InstanceInfoBlendEXT.textureTimesVertexColorAlphaTest(128).allocNative(0);
+                    }
+                    if (overlayBlendPNext == 0) {
+                        overlayBlendPNext = InstanceInfoBlendEXT.textureTimesVertexColorAlphaBlend(1).allocNative(0);
+                    }
 
                     // 3. Water material (refractive, animated normal flipbook, no diffuse layer)
                     java.nio.ByteBuffer whiteBuf = org.lwjgl.system.MemoryUtil.memAlloc(4);
@@ -451,9 +484,10 @@ public final class ForgeRemixRenderer {
                             .build();
                     translucentTerrainMaterial = api.createMaterial(transInfo);
 
-                    LOGGER.info("Created specialized terrain materials: solid=0x{}, cutout=0x{}, water=0x{}, trans=0x{}",
+                    LOGGER.info("Created specialized terrain materials: solid=0x{}, cutout=0x{}, cutout_mipped=0x{}, water=0x{}, trans=0x{}",
                             Long.toHexString(solidTerrainMaterial),
                             Long.toHexString(cutoutTerrainMaterial),
+                            Long.toHexString(cutoutMippedTerrainMaterial),
                             Long.toHexString(waterMaterial),
                             Long.toHexString(translucentTerrainMaterial));
 
@@ -672,22 +706,28 @@ public final class ForgeRemixRenderer {
                             java.nio.ByteBuffer iBuf = com.nvidia.rtxremix.forge.util.CanonicalIndexBuffer.getBuffer(iCount);
                             try {
                                 long matHandle;
-                                int doubleSided = 0;
+                                long blendPNext;
                                 int categoryFlags = 0;
                                 if ("water".equals(surface.bucketKey())) {
                                     matHandle = waterMaterial != 0 ? waterMaterial : defaultTerrainMaterial;
-                                    doubleSided = 1;
+                                    blendPNext = solidBlendPNext;
                                 } else if (surface.category() == SectionMeshData.CAT_OVERLAY) {
                                     matHandle = cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial;
                                     categoryFlags = InstanceCategoryBit.DECAL_STATIC;
-                                    doubleSided = 1;
+                                    blendPNext = overlayBlendPNext;
+                                } else if ("cutout_mipped".equals(surface.bucketKey())) {
+                                    matHandle = cutoutMippedTerrainMaterial != 0 ? cutoutMippedTerrainMaterial
+                                            : (cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial);
+                                    blendPNext = cutoutBlendPNext;
                                 } else if (surface.category() == SectionMeshData.CAT_CUTOUT) {
                                     matHandle = cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial;
-                                    doubleSided = 1;
+                                    blendPNext = cutoutBlendPNext;
                                 } else if (surface.category() == SectionMeshData.CAT_TRANSLUCENT) {
                                     matHandle = translucentTerrainMaterial != 0 ? translucentTerrainMaterial : defaultTerrainMaterial;
+                                    blendPNext = solidBlendPNext;
                                 } else {
                                     matHandle = solidTerrainMaterial != 0 ? solidTerrainMaterial : defaultTerrainMaterial;
+                                    blendPNext = solidBlendPNext;
                                 }
 
                                 MeshInfoSurfaceTriangles surf = new MeshInfoSurfaceTriangles();
@@ -707,7 +747,7 @@ public final class ForgeRemixRenderer {
                                 long mHandle = api.createMesh(mi);
                                 if (mHandle != 0) {
                                     newMeshes.add(mHandle);
-                                    long instHandle = api.sceneInstanceAdd(mHandle, sectionTransform.matrix, categoryFlags, doubleSided, 0);
+                                    long instHandle = api.sceneInstanceAdd(mHandle, sectionTransform.matrix, categoryFlags, 1, blendPNext);
                                     if (instHandle != 0) {
                                         newInstances.add(instHandle);
                                     }
@@ -1101,6 +1141,22 @@ public final class ForgeRemixRenderer {
             try { api.destroyMaterial(cutoutTerrainMaterial); } catch (Exception ignored) {}
             cutoutTerrainMaterial = 0;
         }
+        if (cutoutMippedTerrainMaterial != 0 && api != null) {
+            try { api.destroyMaterial(cutoutMippedTerrainMaterial); } catch (Exception ignored) {}
+            cutoutMippedTerrainMaterial = 0;
+        }
+        if (solidBlendPNext != 0) {
+            RemixBridge.freeExt(solidBlendPNext);
+            solidBlendPNext = 0;
+        }
+        if (cutoutBlendPNext != 0) {
+            RemixBridge.freeExt(cutoutBlendPNext);
+            cutoutBlendPNext = 0;
+        }
+        if (overlayBlendPNext != 0) {
+            RemixBridge.freeExt(overlayBlendPNext);
+            overlayBlendPNext = 0;
+        }
         if (waterMaterial != 0 && api != null) {
             try { api.destroyMaterial(waterMaterial); } catch (Exception ignored) {}
             waterMaterial = 0;
@@ -1136,6 +1192,8 @@ public final class ForgeRemixRenderer {
             interop = null;
         }
         com.nvidia.rtxremix.forge.util.CanonicalIndexBuffer.free();
+        com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.setActive(false);
+        com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.clear();
         active = false;
         LOGGER.info("RTX Remix Renderer resources destroyed.");
     }

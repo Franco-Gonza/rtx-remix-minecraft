@@ -26,9 +26,19 @@ public final class AtlasAnimationForwarder {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("rtxremix/AtlasAnimation");
 
-    private static ResourceLocation currentAtlas = null;
-    private static final List<PendingPatch> pendingBlockPatches = new ArrayList<>();
-    private static final List<PendingPatch> pendingParticlePatches = new ArrayList<>();
+    private static volatile boolean active = true;
+    private static final int MAX_PENDING_PATCHES = 512;
+
+    private static final ThreadLocal<ResourceLocation> currentAtlas = new ThreadLocal<>();
+    private static final List<PendingPatch> pendingBlockPatches = new ArrayList<>(64);
+    private static final List<PendingPatch> pendingParticlePatches = new ArrayList<>(16);
+
+    // Reusable buffers to minimize heap allocations on hot render path
+    private static final List<TexturePatch> blockPatchesBuffer = new ArrayList<>(64);
+    private static final List<TexturePatch> particlePatchesBuffer = new ArrayList<>(16);
+    private static final TextureBatchEntry blockBatchEntry = new TextureBatchEntry();
+    private static final TextureBatchEntry particleBatchEntry = new TextureBatchEntry();
+    private static final TexturePatchInfo sharedPatchInfo = new TexturePatchInfo();
 
     public record PendingPatch(
             int dstX, int dstY,
@@ -38,31 +48,55 @@ public final class AtlasAnimationForwarder {
             long pixelPtr, int rowPitch
     ) {}
 
+    public static void setActive(boolean isRunning) {
+        active = isRunning;
+        if (!isRunning) {
+            clear();
+        }
+    }
+
+    public static void pause() {
+        setActive(false);
+    }
+
+    public static void resume() {
+        setActive(true);
+    }
+
     public static void beginAtlasUpload(ResourceLocation location) {
         if (TextureAtlas.LOCATION_BLOCKS.equals(location) || TextureAtlas.LOCATION_PARTICLES.equals(location)) {
-            currentAtlas = location;
+            currentAtlas.set(location);
         } else {
-            currentAtlas = null;
+            currentAtlas.remove();
         }
     }
 
     public static void endAtlasUpload() {
-        currentAtlas = null;
+        currentAtlas.remove();
     }
 
     public static boolean isCapturing() {
-        return currentAtlas != null;
+        return active && currentAtlas.get() != null;
     }
 
     public static void addPatch(int texX, int texY, int srcX, int srcY,
                                 int width, int height,
                                 int imgWidth, int imgHeight,
                                 long pixelPtr, int rowPitch) {
-        if (currentAtlas == null || pixelPtr == 0 || width <= 0 || height <= 0) return;
+        if (!active || pixelPtr == 0 || width <= 0 || height <= 0) return;
+        ResourceLocation atlas = currentAtlas.get();
+        if (atlas == null) return;
+
         PendingPatch patch = new PendingPatch(texX, texY, srcX, srcY, width, height, imgWidth, imgHeight, pixelPtr, rowPitch);
-        if (TextureAtlas.LOCATION_BLOCKS.equals(currentAtlas)) {
+        if (TextureAtlas.LOCATION_BLOCKS.equals(atlas)) {
+            if (pendingBlockPatches.size() >= MAX_PENDING_PATCHES) {
+                pendingBlockPatches.clear();
+            }
             pendingBlockPatches.add(patch);
-        } else if (TextureAtlas.LOCATION_PARTICLES.equals(currentAtlas)) {
+        } else if (TextureAtlas.LOCATION_PARTICLES.equals(atlas)) {
+            if (pendingParticlePatches.size() >= MAX_PENDING_PATCHES) {
+                pendingParticlePatches.clear();
+            }
             pendingParticlePatches.add(patch);
         }
     }
@@ -72,26 +106,33 @@ public final class AtlasAnimationForwarder {
     }
 
     public static void flush(RemixAPI api, long blockAtlasHandle, long particleAtlasHandle) {
-        if (api == null) {
+        if (!active || api == null) {
             clear();
             return;
         }
 
-        List<TextureBatchEntry> entries = new ArrayList<>(2);
+        int entryCount = 0;
+        TextureBatchEntry bEntry = null;
+        TextureBatchEntry pEntry = null;
+
         if (blockAtlasHandle != 0 && !pendingBlockPatches.isEmpty()) {
-            TextureBatchEntry entry = buildBatchEntry(blockAtlasHandle, pendingBlockPatches);
-            if (entry != null) entries.add(entry);
+            bEntry = buildBatchEntry(blockAtlasHandle, pendingBlockPatches, blockPatchesBuffer, blockBatchEntry);
+            if (bEntry != null) entryCount++;
         }
         if (particleAtlasHandle != 0 && !pendingParticlePatches.isEmpty()) {
-            TextureBatchEntry entry = buildBatchEntry(particleAtlasHandle, pendingParticlePatches);
-            if (entry != null) entries.add(entry);
+            pEntry = buildBatchEntry(particleAtlasHandle, pendingParticlePatches, particlePatchesBuffer, particleBatchEntry);
+            if (pEntry != null) entryCount++;
         }
 
-        if (!entries.isEmpty()) {
+        if (entryCount > 0) {
             try {
-                TexturePatchInfo info = new TexturePatchInfo();
-                info.entries = entries.toArray(new TextureBatchEntry[0]);
-                api.updateTextureFromMemory(info);
+                TextureBatchEntry[] batchEntries = new TextureBatchEntry[entryCount];
+                int idx = 0;
+                if (bEntry != null) batchEntries[idx++] = bEntry;
+                if (pEntry != null) batchEntries[idx] = pEntry;
+
+                sharedPatchInfo.entries = batchEntries;
+                api.updateTextureFromMemory(sharedPatchInfo);
             } catch (Exception e) {
                 LOGGER.debug("Failed to forward animated atlas patches: {}", e.getMessage());
             }
@@ -101,17 +142,39 @@ public final class AtlasAnimationForwarder {
         pendingParticlePatches.clear();
     }
 
-    private static TextureBatchEntry buildBatchEntry(long textureHandle, List<PendingPatch> patchesList) {
-        if (patchesList.isEmpty()) return null;
-        List<TexturePatch> validPatches = new ArrayList<>(patchesList.size());
-        for (PendingPatch p : patchesList) {
+    public static TextureBatchEntry buildBatchEntry(long textureHandle, List<PendingPatch> patchesList) {
+        return buildBatchEntry(textureHandle, patchesList, new ArrayList<>(patchesList.size()), new TextureBatchEntry());
+    }
+
+    private static TextureBatchEntry buildBatchEntry(long textureHandle,
+                                                     List<PendingPatch> patchesList,
+                                                     List<TexturePatch> patchBuffer,
+                                                     TextureBatchEntry outEntry) {
+        if (textureHandle == 0 || patchesList.isEmpty()) return null;
+        patchBuffer.clear();
+
+        for (int i = 0; i < patchesList.size(); i++) {
+            PendingPatch p = patchesList.get(i);
             if (p.width <= 0 || p.height <= 0 || p.pixelPtr == 0) continue;
-            // Strict bounds check: ensure the sub-rectangle fits inside the source image
-            if (p.srcX < 0 || p.srcY < 0 || p.srcX + p.width > p.srcImageWidth || p.srcY + p.height > p.srcImageHeight) {
+            // Reject invalid destination coordinates
+            if (p.dstX < 0 || p.dstY < 0) continue;
+            // Enforce upper bound on dimension to prevent uint32 overflow in Remix
+            if (p.width > 65535 || p.height > 65535) continue;
+            // rowPitch must cover at least one full row of pixel data (4 bpp for RGBA8)
+            if (p.rowPitch < p.width * 4) continue;
+            // Strict source sub-rectangle bounds check with 64-bit math to prevent integer overflow
+            if (p.srcX < 0 || p.srcY < 0) continue;
+            if ((long) p.srcX + (long) p.width > (long) p.srcImageWidth ||
+                (long) p.srcY + (long) p.height > (long) p.srcImageHeight) {
                 continue;
             }
-            long offsetPtr = p.pixelPtr + ((long) p.srcY * p.srcImageWidth + p.srcX) * 4L;
-            int requiredBytes = (p.height - 1) * p.rowPitch + p.width * 4;
+
+            // Mathematically correct strided offset from base pointer
+            long offsetPtr = p.pixelPtr + (long) p.srcY * (long) p.rowPitch + (long) p.srcX * 4L;
+            long reqBytes64 = (long) (p.height - 1) * (long) p.rowPitch + (long) p.width * 4L;
+            if (reqBytes64 <= 0 || reqBytes64 > Integer.MAX_VALUE) continue;
+            int requiredBytes = (int) reqBytes64;
+
             ByteBuffer buf = MemoryUtil.memByteBuffer(offsetPtr, requiredBytes);
 
             TexturePatch patch = new TexturePatch();
@@ -122,21 +185,22 @@ public final class AtlasAnimationForwarder {
             patch.pixelData = buf;
             patch.rowPitch = p.rowPitch;
             patch.format = TextureFormat.RGBA8_UNORM;
-            validPatches.add(patch);
+            patchBuffer.add(patch);
         }
 
-        if (validPatches.isEmpty()) return null;
+        if (patchBuffer.isEmpty()) return null;
 
-        TextureBatchEntry entry = new TextureBatchEntry();
-        entry.handle = textureHandle;
-        entry.patches = validPatches.toArray(new TexturePatch[0]);
-        return entry;
+        outEntry.handle = textureHandle;
+        outEntry.patches = patchBuffer.toArray(new TexturePatch[0]);
+        return outEntry;
     }
 
     public static void clear() {
         pendingBlockPatches.clear();
         pendingParticlePatches.clear();
-        currentAtlas = null;
+        blockPatchesBuffer.clear();
+        particlePatchesBuffer.clear();
+        currentAtlas.remove();
     }
 
     private AtlasAnimationForwarder() {}
