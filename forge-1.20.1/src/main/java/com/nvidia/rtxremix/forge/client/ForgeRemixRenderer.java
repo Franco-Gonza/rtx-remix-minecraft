@@ -652,15 +652,18 @@ public final class ForgeRemixRenderer {
                             java.nio.ByteBuffer iBuf = com.nvidia.rtxremix.forge.util.CanonicalIndexBuffer.getBuffer(iCount);
                             try {
                                 long matHandle;
-                                int doubleSided = 1;
+                                int doubleSided = 0;
                                 int categoryFlags = 0;
                                 if ("water".equals(surface.bucketKey())) {
                                     matHandle = waterMaterial != 0 ? waterMaterial : defaultTerrainMaterial;
+                                    doubleSided = 1;
                                 } else if (surface.category() == SectionMeshData.CAT_OVERLAY) {
                                     matHandle = cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial;
                                     categoryFlags = InstanceCategoryBit.DECAL_STATIC;
+                                    doubleSided = 1;
                                 } else if (surface.category() == SectionMeshData.CAT_CUTOUT) {
                                     matHandle = cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial;
+                                    doubleSided = 1;
                                 } else if (surface.category() == SectionMeshData.CAT_TRANSLUCENT) {
                                     matHandle = translucentTerrainMaterial != 0 ? translucentTerrainMaterial : defaultTerrainMaterial;
                                 } else {
