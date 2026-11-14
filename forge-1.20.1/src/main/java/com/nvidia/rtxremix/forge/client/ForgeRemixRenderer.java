@@ -50,6 +50,7 @@ public final class ForgeRemixRenderer {
     private boolean active = false;
     private boolean submitFrameCalled = false;
     private long frameIndex = 0;
+    private static volatile boolean renderingPostWeather = false;
 
     private ForgeRemixRenderer() {}
 
@@ -59,6 +60,14 @@ public final class ForgeRemixRenderer {
 
     public static boolean isRtxEnabled() {
         return INSTANCE.active && INSTANCE.initialized && INSTANCE.api != null;
+    }
+
+    public static boolean isRenderingPostWeather() {
+        return renderingPostWeather;
+    }
+
+    public static void setRenderingPostWeather(boolean value) {
+        renderingPostWeather = value;
     }
 
     public com.nvidia.rtxremix.forge.sky.SkyRenderer getSkyRenderer() {
@@ -750,6 +759,24 @@ public final class ForgeRemixRenderer {
                     int remixTexture = interop.getTexture();
                     if (remixTexture > 0 && overlay != null) {
                         overlay.render(remixTexture);
+
+                        // Draw rain and snow on top of the raytraced scene overlay
+                        if (client.level != null && (client.level.isRaining() || client.level.isThundering())
+                                && client.levelRenderer != null && client.gameRenderer != null) {
+                            try {
+                                Camera camera = client.gameRenderer.getMainCamera();
+                                if (camera != null) {
+                                    Vec3 camPos = camera.getPosition();
+                                    renderingPostWeather = true;
+                                    ((com.nvidia.rtxremix.forge.mixin.LevelRendererAccessor) client.levelRenderer)
+                                            .rtxremix$renderSnowAndRain(client.gameRenderer.lightTexture(), 1.0f, camPos.x, camPos.y, camPos.z);
+                                }
+                            } catch (Exception e) {
+                                LOGGER.debug("Post-overlay weather draw skipped: {}", e.getMessage());
+                            } finally {
+                                renderingPostWeather = false;
+                            }
+                        }
                     }
                 } catch (Exception e) {
                     LOGGER.error("Error blitting Vulkan raytraced scene to GL overlay", e);

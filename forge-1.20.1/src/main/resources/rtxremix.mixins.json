@@ -12,6 +12,7 @@
         "ReceivingLevelScreenMixin",
         "ChunkRenderDispatcherRebuildTaskMixin",
         "LevelRendererMixin",
+        "LevelRendererAccessor",
         "ParticleEngineAccessor",
         "ParticleAccessor",
         "SingleQuadParticleAccessor",

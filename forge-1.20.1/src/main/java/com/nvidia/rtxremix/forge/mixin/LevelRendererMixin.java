@@ -45,4 +45,13 @@ public abstract class LevelRendererMixin {
             }
         }
     }
+
+    @Inject(method = "renderSnowAndRain", at = @At("HEAD"), cancellable = true)
+    private void rtxremix$suppressPreOverlayWeather(
+            net.minecraft.client.renderer.LightTexture lightTexture, float partialTick,
+            double camX, double camY, double camZ, CallbackInfo ci) {
+        if (ForgeRemixRenderer.isRtxEnabled() && !ForgeRemixRenderer.isRenderingPostWeather()) {
+            ci.cancel();
+        }
+    }
 }

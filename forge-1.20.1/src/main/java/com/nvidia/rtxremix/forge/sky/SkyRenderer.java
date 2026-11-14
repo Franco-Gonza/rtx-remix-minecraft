@@ -96,7 +96,13 @@ public class SkyRenderer {
         }
     }
 
+    private final ByteBuffer fixedSkyBuffer = ByteBuffer.allocateDirect(AtmosphericSkyGenerator.OUTPUT_BYTES).order(ByteOrder.nativeOrder());
+    private float lastFixedR = -1.0f;
+    private float lastFixedG = -1.0f;
+    private float lastFixedB = -1.0f;
+
     private void renderAtmosphericSky(RemixAPI api, ClientLevel world, Vec3 cameraPos, float tickDelta) {
+        lastFixedR = -1.0f;
         float timeOfDay = world.getTimeOfDay(tickDelta);
         float rain = world.getRainLevel(tickDelta);
 
@@ -170,19 +176,30 @@ public class SkyRenderer {
     }
 
     private void renderFixedSky(RemixAPI api, float[] radiance) {
-        ByteBuffer pixels = ByteBuffer.allocateDirect(AtmosphericSkyGenerator.OUTPUT_BYTES).order(ByteOrder.nativeOrder());
-        short r = (short) (HardcodedVertex.packHalf2x16(radiance[0], 0.0f) & 0xFFFF);
-        short g = (short) (HardcodedVertex.packHalf2x16(radiance[1], 0.0f) & 0xFFFF);
-        short b = (short) (HardcodedVertex.packHalf2x16(radiance[2], 0.0f) & 0xFFFF);
-        short a = (short) (HardcodedVertex.packHalf2x16(1.0f, 0.0f) & 0xFFFF);
+        float r = radiance[0], g = radiance[1], b = radiance[2];
+        if (skyTextureHandle == 0 || r != lastFixedR || g != lastFixedG || b != lastFixedB) {
+            fixedSkyBuffer.clear();
+            short hr = (short) (HardcodedVertex.packHalf2x16(r, 0.0f) & 0xFFFF);
+            short hg = (short) (HardcodedVertex.packHalf2x16(g, 0.0f) & 0xFFFF);
+            short hb = (short) (HardcodedVertex.packHalf2x16(b, 0.0f) & 0xFFFF);
+            short ha = (short) (HardcodedVertex.packHalf2x16(1.0f, 0.0f) & 0xFFFF);
 
-        for (int i = 0; i < AtmosphericSkyGenerator.WIDTH * AtmosphericSkyGenerator.HEIGHT; i++) {
-            pixels.putShort(r).putShort(g).putShort(b).putShort(a);
+            for (int i = 0; i < AtmosphericSkyGenerator.WIDTH * AtmosphericSkyGenerator.HEIGHT; i++) {
+                fixedSkyBuffer.putShort(hr).putShort(hg).putShort(hb).putShort(ha);
+            }
+            fixedSkyBuffer.flip();
+
+            publishSkyDome(api, fixedSkyBuffer, 1.0f);
+            lastFixedR = r;
+            lastFixedG = g;
+            lastFixedB = b;
+        } else if (skyDomeLightHandle != 0) {
+            try {
+                api.drawLightInstance(skyDomeLightHandle);
+            } catch (Exception ignored) {}
         }
-        pixels.flip();
 
-        publishSkyDome(api, pixels, 1.0f);
-        publishSkyAmbient(api, radiance[0], radiance[1], radiance[2]);
+        publishSkyAmbient(api, r, g, b);
     }
 
     private void publishSkyDome(RemixAPI api, ByteBuffer pixels, float multiplier) {
@@ -252,6 +269,9 @@ public class SkyRenderer {
     }
 
     public void clearLevelState(RemixAPI api) {
+        lastFixedR = -1.0f;
+        lastFixedG = -1.0f;
+        lastFixedB = -1.0f;
         if (api == null) return;
         if (sunLightHandle != 0) {
             try { api.destroyLight(sunLightHandle); } catch (Exception ignored) {}
