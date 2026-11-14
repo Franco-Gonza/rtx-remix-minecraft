@@ -171,7 +171,7 @@ public class SkyRenderer {
                 api.drawLightInstance(sunLightHandle);
             }
         } catch (Exception e) {
-            LOGGER.debug("Sun light update failed: {}", e.getMessage());
+            LOGGER.warn("Sun light update failed: {}", e.getMessage());
         }
     }
 
@@ -222,16 +222,20 @@ public class SkyRenderer {
                         .build();
                 skyDomeLightHandle = api.createLight(lightInfo);
             } else {
-                atmosphericTexturePatch.pixelData = pixels;
-                atmosphericTextureEntry.handle = skyTextureHandle;
-                api.updateTextureFromMemory(atmosphericTextureUpdate);
+                try {
+                    atmosphericTexturePatch.pixelData = pixels;
+                    atmosphericTextureEntry.handle = skyTextureHandle;
+                    api.updateTextureFromMemory(atmosphericTextureUpdate);
+                } catch (Exception e) {
+                    LOGGER.debug("Sky dome texture update skipped: {}", e.getMessage());
+                }
             }
 
             if (skyDomeLightHandle != 0) {
                 api.drawLightInstance(skyDomeLightHandle);
             }
         } catch (Exception e) {
-            LOGGER.debug("Sky dome draw failed: {}", e.getMessage());
+            LOGGER.warn("Sky dome draw failed: {}", e.getMessage());
         }
     }
 
@@ -264,7 +268,20 @@ public class SkyRenderer {
                 api.drawLightInstance(skyAmbientRectHandle);
             }
         } catch (Exception e) {
-            LOGGER.debug("Sky ambient rect draw failed: {}", e.getMessage());
+            LOGGER.warn("Sky ambient rect draw failed: {}", e.getMessage());
+        }
+    }
+
+    public void drawLights(RemixAPI api) {
+        if (!enabled || api == null) return;
+        if (skyDomeLightHandle != 0) {
+            try { api.drawLightInstance(skyDomeLightHandle); } catch (Exception ignored) {}
+        }
+        if (sunLightHandle != 0) {
+            try { api.drawLightInstance(sunLightHandle); } catch (Exception ignored) {}
+        }
+        if (skyAmbientRectHandle != 0) {
+            try { api.drawLightInstance(skyAmbientRectHandle); } catch (Exception ignored) {}
         }
     }
 
@@ -295,12 +312,9 @@ public class SkyRenderer {
         if (world == null || cameraPos == null) return false;
         try {
             BlockPos pos = BlockPos.containing(cameraPos);
-            ResourceKey<?> biomeKey = world.registryAccess()
-                    .registryOrThrow(Registries.BIOME)
-                    .getResourceKey(world.getBiome(pos).value())
-                    .orElse(null);
-
+            ResourceKey<?> biomeKey = world.getBiome(pos).unwrapKey().orElse(null);
             if (biomeKey == null) return false;
+
             ResourceLocation id = biomeKey.location();
             String ns = id.getNamespace();
             String path = id.getPath();

@@ -28,6 +28,7 @@ public final class ForgeRemixRenderer {
 
     private final Minecraft client = Minecraft.getInstance();
     private final com.nvidia.rtxremix.forge.sky.SkyRenderer skyRenderer = new com.nvidia.rtxremix.forge.sky.SkyRenderer();
+    private final com.nvidia.rtxremix.forge.light.HeldLightManager heldLightManager = new com.nvidia.rtxremix.forge.light.HeldLightManager();
     private final com.nvidia.rtxremix.forge.logic.ConfLayerDriver confLayerDriver = new com.nvidia.rtxremix.forge.logic.ConfLayerDriver();
     private final java.util.List<com.nvidia.rtxremix.forge.terrain.capture.BlockDataQueue.QueuedCapture> drainedCaptures = new java.util.ArrayList<>();
     private RemixAPI api;
@@ -72,6 +73,10 @@ public final class ForgeRemixRenderer {
 
     public com.nvidia.rtxremix.forge.sky.SkyRenderer getSkyRenderer() {
         return skyRenderer;
+    }
+
+    public com.nvidia.rtxremix.forge.light.HeldLightManager getHeldLightManager() {
+        return heldLightManager;
     }
 
     private boolean menuOpen = false;
@@ -224,6 +229,7 @@ public final class ForgeRemixRenderer {
 
         if (client.level != null) {
             skyRenderer.render(api, client.level, pos, partialTicks);
+            heldLightManager.update(api, client.level, camera, partialTicks);
             boolean isUnderwater = camera.getFluidInCamera() == net.minecraft.world.level.material.FogType.WATER;
             confLayerDriver.update(client.level, pos, isUnderwater, 1.0f / 60.0f);
         }
@@ -751,6 +757,14 @@ public final class ForgeRemixRenderer {
                 com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.flush(api, terrainAtlasTexture);
             }
 
+            // Draw sky lights and dynamic held lights right before frame submit
+            if (skyRenderer != null) {
+                skyRenderer.drawLights(api);
+            }
+            if (heldLightManager != null) {
+                heldLightManager.drawLights(api);
+            }
+
             // Submit frame to RTX Remix runtime
             api.submit(null);
             submitFrameCalled = true;
@@ -864,6 +878,9 @@ public final class ForgeRemixRenderer {
         com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.clear();
         if (skyRenderer != null && api != null) {
             skyRenderer.clearLevelState(api);
+        }
+        if (heldLightManager != null && api != null) {
+            heldLightManager.clear(api);
         }
         if (particleRenderer != null && api != null) {
             particleRenderer.destroy(api);
