@@ -102,11 +102,14 @@ public final class AtlasAnimationForwarder {
     }
 
     private static TextureBatchEntry buildBatchEntry(long textureHandle, List<PendingPatch> patchesList) {
-        int count = patchesList.size();
-        if (count == 0) return null;
-        TexturePatch[] patches = new TexturePatch[count];
-        for (int i = 0; i < count; i++) {
-            PendingPatch p = patchesList.get(i);
+        if (patchesList.isEmpty()) return null;
+        List<TexturePatch> validPatches = new ArrayList<>(patchesList.size());
+        for (PendingPatch p : patchesList) {
+            if (p.width <= 0 || p.height <= 0 || p.pixelPtr == 0) continue;
+            // Strict bounds check: ensure the sub-rectangle fits inside the source image
+            if (p.srcX < 0 || p.srcY < 0 || p.srcX + p.width > p.srcImageWidth || p.srcY + p.height > p.srcImageHeight) {
+                continue;
+            }
             long offsetPtr = p.pixelPtr + ((long) p.srcY * p.srcImageWidth + p.srcX) * 4L;
             int requiredBytes = (p.height - 1) * p.rowPitch + p.width * 4;
             ByteBuffer buf = MemoryUtil.memByteBuffer(offsetPtr, requiredBytes);
@@ -119,12 +122,14 @@ public final class AtlasAnimationForwarder {
             patch.pixelData = buf;
             patch.rowPitch = p.rowPitch;
             patch.format = TextureFormat.RGBA8_UNORM;
-            patches[i] = patch;
+            validPatches.add(patch);
         }
+
+        if (validPatches.isEmpty()) return null;
 
         TextureBatchEntry entry = new TextureBatchEntry();
         entry.handle = textureHandle;
-        entry.patches = patches;
+        entry.patches = validPatches.toArray(new TexturePatch[0]);
         return entry;
     }
 

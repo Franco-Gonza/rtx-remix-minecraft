@@ -52,4 +52,16 @@ public class AtlasAnimationForwarderTest {
         assertEquals(4, SectionMeshData.CAT_PARTICLE);
         assertEquals(5, SectionMeshData.CAT_COUNT);
     }
+
+    @Test
+    void testAtlasPatchBoundsVerification() {
+        AtlasAnimationForwarder.beginAtlasUpload(TextureAtlas.LOCATION_BLOCKS);
+        // Valid patch: 16x16 within 16x256 image
+        AtlasAnimationForwarder.addPatch(0, 0, 0, 16, 16, 16, 16, 256, 0x1000L, 64);
+        // Invalid patch: exceeds source height
+        AtlasAnimationForwarder.addPatch(0, 0, 0, 250, 16, 16, 16, 256, 0x1000L, 64);
+        AtlasAnimationForwarder.endAtlasUpload();
+        // Flushing without live API clears gracefully without error
+        AtlasAnimationForwarder.flush(null, 1L);
+    }
 }
