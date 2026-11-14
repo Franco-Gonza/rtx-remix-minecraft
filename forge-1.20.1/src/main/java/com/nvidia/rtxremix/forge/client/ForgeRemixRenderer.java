@@ -861,6 +861,7 @@ public final class ForgeRemixRenderer {
         sectionLights.clear();
 
         com.nvidia.rtxremix.forge.terrain.capture.BlockDataQueue.clear();
+        com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.clear();
         if (skyRenderer != null && api != null) {
             skyRenderer.clearLevelState(api);
         }
