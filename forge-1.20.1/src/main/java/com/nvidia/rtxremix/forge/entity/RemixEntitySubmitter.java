@@ -35,6 +35,7 @@ public class RemixEntitySubmitter {
     private record MaterialKey(ResourceLocation textureId, RenderLayerUtils.SurfaceMode mode) {}
 
     private final Map<EntityPartKey, Long> retainedInstances = new HashMap<>();
+    private final Map<EntityPartKey, Long> instanceMeshes = new HashMap<>();
     private final Map<Object, List<EntityPartKey>> instancesByEntity = new HashMap<>();
     private final Set<Object> seenEntitiesThisFrame = new HashSet<>();
 
@@ -169,7 +170,7 @@ public class RemixEntitySubmitter {
             surface.indexCount = indexCount;
             surface.material = materialHandle;
 
-            long meshHash = computeMeshHash(px, py, pz, vertexCount, layer.layerIndex());
+            long meshHash = java.util.concurrent.ThreadLocalRandom.current().nextLong() | 1L;
             MeshInfo meshInfo = MeshInfo.builder()
                     .hash(meshHash)
                     .surfaces(surface)
@@ -205,6 +206,14 @@ public class RemixEntitySubmitter {
                 long instanceHandle = api.sceneInstanceAdd(meshHandle, worldTransform.matrix, categoryFlags, 1, 0);
                 retainedInstances.put(partKey, instanceHandle);
                 instancesByEntity.computeIfAbsent(result.entity(), k -> new ArrayList<>()).add(partKey);
+            }
+            if (!layer.transientGeometry()) {
+                Long oldMesh = instanceMeshes.put(partKey, meshHandle);
+                if (oldMesh != null && oldMesh != 0 && oldMesh != meshHandle) {
+                    try {
+                        api.destroyMesh(oldMesh);
+                    } catch (Exception ignored) {}
+                }
             }
             drawCount++;
         } catch (Exception e) {
@@ -246,18 +255,6 @@ public class RemixEntitySubmitter {
                 }
             }
         }
-    }
-
-    private long computeMeshHash(float[] px, float[] py, float[] pz, int count, int layerIndex) {
-        long h = 1125899906842597L;
-        h = 31 * h + layerIndex;
-        int step = Math.max(1, count / 8);
-        for (int i = 0; i < count; i += step) {
-            h = 31 * h + Float.floatToIntBits(px[i]);
-            h = 31 * h + Float.floatToIntBits(py[i]);
-            h = 31 * h + Float.floatToIntBits(pz[i]);
-        }
-        return h;
     }
 
     private long getOrCreateMaterial(ResourceLocation textureId, RenderLayerUtils.SurfaceMode surfaceMode) {
@@ -404,6 +401,12 @@ public class RemixEntitySubmitter {
                             api.sceneInstanceRemove(instance);
                         } catch (Exception ignored) {}
                     }
+                    Long mesh = instanceMeshes.remove(partKey);
+                    if (mesh != null && mesh != 0) {
+                        try {
+                            api.destroyMesh(mesh);
+                        } catch (Exception ignored) {}
+                    }
                 }
                 it.remove();
             }
@@ -420,6 +423,16 @@ public class RemixEntitySubmitter {
         }
         retainedInstances.clear();
         instancesByEntity.clear();
+
+        for (Long mesh : instanceMeshes.values()) {
+            if (mesh != null && mesh != 0) {
+                try {
+                    api.destroyMesh(mesh);
+                } catch (Exception ignored) {}
+            }
+        }
+        instanceMeshes.clear();
+
         for (long mesh : transientMeshes) {
             try {
                 api.destroyMesh(mesh);
@@ -429,13 +442,7 @@ public class RemixEntitySubmitter {
     }
 
     public void destroy() {
-        for (Long instance : retainedInstances.values()) {
-            try {
-                api.sceneInstanceRemove(instance);
-            } catch (Exception ignored) {}
-        }
-        retainedInstances.clear();
-        instancesByEntity.clear();
+        clearInstances();
 
         for (Long mat : materialCache.values()) {
             try {
