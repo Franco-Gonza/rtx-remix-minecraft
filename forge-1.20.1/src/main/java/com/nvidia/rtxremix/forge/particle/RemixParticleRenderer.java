@@ -63,7 +63,11 @@ public final class RemixParticleRenderer {
             0.0f, 0.0f, 1.0f, 0.0f
     };
 
+    private static final java.util.concurrent.atomic.AtomicLong MESH_HASH_COUNTER =
+            new java.util.concurrent.atomic.AtomicLong(0x5041_5254_0000_0000L);
+
     private final Minecraft client;
+    private int lastAtlasTexId = -1;
     private long particleAtlasTexture = 0;
     private long particleMaterial = 0;
     private long particleBlendExtPtr = 0;
@@ -86,7 +90,7 @@ public final class RemixParticleRenderer {
     }
 
     private void ensureMaterials(RemixAPI api) {
-        if (particleMaterial != 0 || api == null || client == null) return;
+        if (api == null || client == null) return;
         try {
             if (client.getTextureManager() == null) return;
             AbstractTexture tex = client.getTextureManager().getTexture(TextureAtlas.LOCATION_PARTICLES);
@@ -94,6 +98,20 @@ public final class RemixParticleRenderer {
 
             int texId = atlas.getId();
             if (texId <= 0) return;
+
+            if (particleMaterial != 0 && lastAtlasTexId == texId) return;
+
+            if (particleMaterial != 0) {
+                try { api.destroyMaterial(particleMaterial); } catch (Exception ignored) {}
+                particleMaterial = 0;
+            }
+            if (particleAtlasTexture != 0) {
+                try { api.destroyTexture(particleAtlasTexture); } catch (Exception ignored) {}
+                particleAtlasTexture = 0;
+            }
+            lastAtlasTexId = -1;
+
+            lastAtlasTexId = texId;
 
             int prevTex = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, texId);
@@ -193,7 +211,15 @@ public final class RemixParticleRenderer {
         vertexBuffer.clear();
         indexBuffer.clear();
 
-        for (Particle p : queue) {
+        Particle[] particles;
+        try {
+            particles = queue.toArray(new Particle[0]);
+        } catch (Throwable t) {
+            return;
+        }
+
+        for (Particle p : particles) {
+            if (p == null) continue;
             if (!(p instanceof SingleQuadParticle sqp)) continue;
             ParticleAccessor pa = (ParticleAccessor) p;
             if (pa.rtxremix$getRemoved()) continue;
@@ -270,7 +296,7 @@ public final class RemixParticleRenderer {
             surf.material = materialHandle;
             surf.flags = MeshInfoSurfaceTriangles.TEXCOORD_BOUNDS;
 
-            long meshHash = 0x5041_5254_0000L ^ (((long) count) << 16) ^ activeMeshes.size();
+            long meshHash = MESH_HASH_COUNTER.incrementAndGet();
             MeshInfo mi = MeshInfo.builder()
                     .hash(meshHash)
                     .surfaces(surf)
@@ -390,6 +416,7 @@ public final class RemixParticleRenderer {
                 try { api.destroyTexture(particleAtlasTexture); } catch (Exception ignored) {}
                 particleAtlasTexture = 0;
             }
+            lastAtlasTexId = -1;
             if (particleBlendExtPtr != 0) {
                 RemixBridge.freeExt(particleBlendExtPtr);
                 particleBlendExtPtr = 0;
