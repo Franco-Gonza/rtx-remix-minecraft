@@ -37,6 +37,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -282,7 +283,7 @@ public final class RemixParticleRenderer {
             surf.indexBuffer = indexBuffer;
             surf.indexCount = count * INDICES_PER_PARTICLE;
             surf.material = materialHandle;
-            surf.flags = MeshInfoSurfaceTriangles.TEXCOORD_BOUNDS;
+            surf.flags = 0; // Direct particle atlas sampling without UV re-normalization
 
             long meshHash = MESH_HASH_COUNTER.incrementAndGet();
             MeshInfo mi = MeshInfo.builder()
@@ -361,10 +362,12 @@ public final class RemixParticleRenderer {
 
     private void ensureBuffers() {
         if (vertexBuffer == null) {
-            vertexBuffer = ByteBuffer.allocateDirect(MAX_PARTICLES_PER_BATCH * VERTS_PER_PARTICLE * STRIDE);
+            vertexBuffer = ByteBuffer.allocateDirect(MAX_PARTICLES_PER_BATCH * VERTS_PER_PARTICLE * STRIDE)
+                    .order(ByteOrder.nativeOrder());
         }
         if (indexBuffer == null) {
-            indexBuffer = ByteBuffer.allocateDirect(MAX_PARTICLES_PER_BATCH * INDICES_PER_PARTICLE * Integer.BYTES);
+            indexBuffer = ByteBuffer.allocateDirect(MAX_PARTICLES_PER_BATCH * INDICES_PER_PARTICLE * Integer.BYTES)
+                    .order(ByteOrder.nativeOrder());
         }
     }
 

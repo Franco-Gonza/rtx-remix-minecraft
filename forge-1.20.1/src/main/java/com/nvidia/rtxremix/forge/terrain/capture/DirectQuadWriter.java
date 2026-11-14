@@ -98,6 +98,11 @@ public final class DirectQuadWriter {
                 vertices.putInt(wo + 32,   color);
                 vertices.putInt(wo + 36,   boundsMin);
                 vertices.putInt(wo + 40,   boundsMax);
+                vertices.putInt(wo + 44,   0);
+                vertices.putInt(wo + 48,   0);
+                vertices.putInt(wo + 52,   0);
+                vertices.putInt(wo + 56,   0);
+                vertices.putInt(wo + 60,   0);
                 hashVertex(x, y, z,
                            nx, ny, nz,
                            uvs[uvOff + v * 2],
