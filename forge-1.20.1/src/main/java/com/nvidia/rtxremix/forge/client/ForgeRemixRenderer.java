@@ -579,70 +579,73 @@ public final class ForgeRemixRenderer {
                     }
                 }
 
-                if (!meshData.isEmpty()) {
-                    java.util.List<Long> newMeshes = new java.util.ArrayList<>();
-                    java.util.List<Long> newInstances = new java.util.ArrayList<>();
-                    Transform sectionTransform = new Transform();
-                    sectionTransform.setTranslation(pos.minBlockX(), pos.minBlockY(), pos.minBlockZ());
+                try {
+                    if (!meshData.isEmpty()) {
+                        java.util.List<Long> newMeshes = new java.util.ArrayList<>();
+                        java.util.List<Long> newInstances = new java.util.ArrayList<>();
+                        Transform sectionTransform = new Transform();
+                        sectionTransform.setTranslation(pos.minBlockX(), pos.minBlockY(), pos.minBlockZ());
 
-                    for (SectionMeshData.Surface surface : meshData.surfaces()) {
-                        int vCount = surface.vertexCount();
-                        int iCount = surface.indexCount();
-                        if (vCount <= 0 || iCount <= 0) continue;
+                        for (SectionMeshData.Surface surface : meshData.surfaces()) {
+                            int vCount = surface.vertexCount();
+                            int iCount = surface.indexCount();
+                            if (vCount <= 0 || iCount <= 0) continue;
 
-                        java.nio.ByteBuffer vBuf = surface.vertexBuffer();
-                        java.nio.ByteBuffer iBuf = com.nvidia.rtxremix.forge.util.CanonicalIndexBuffer.getBuffer(iCount);
-                        try {
-                            long matHandle;
-                            int doubleSided = 1;
-                            int categoryFlags = 0;
-                            if ("water".equals(surface.bucketKey())) {
-                                matHandle = waterMaterial != 0 ? waterMaterial : defaultTerrainMaterial;
-                            } else if (surface.category() == SectionMeshData.CAT_OVERLAY) {
-                                matHandle = cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial;
-                                categoryFlags = InstanceCategoryBit.DECAL_STATIC;
-                            } else if (surface.category() == SectionMeshData.CAT_CUTOUT) {
-                                matHandle = cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial;
-                            } else if (surface.category() == SectionMeshData.CAT_TRANSLUCENT) {
-                                matHandle = translucentTerrainMaterial != 0 ? translucentTerrainMaterial : defaultTerrainMaterial;
-                            } else {
-                                matHandle = solidTerrainMaterial != 0 ? solidTerrainMaterial : defaultTerrainMaterial;
-                            }
-
-                            MeshInfoSurfaceTriangles surf = new MeshInfoSurfaceTriangles();
-                            surf.vertexBuffer = vBuf;
-                            surf.vertexCount = vCount;
-                            surf.indexBuffer = iBuf;
-                            surf.indexCount = iCount;
-                            surf.material = matHandle;
-                            surf.flags = 0; // Direct atlas sampling without UV re-normalization
-
-                            long hash = java.util.concurrent.ThreadLocalRandom.current().nextLong() | 1L;
-                            MeshInfo mi = MeshInfo.builder()
-                                    .hash(hash)
-                                    .surfaces(surf)
-                                    .build();
-
-                            long mHandle = api.createMesh(mi);
-                            if (mHandle != 0) {
-                                newMeshes.add(mHandle);
-                                long instHandle = api.sceneInstanceAdd(mHandle, sectionTransform.matrix, categoryFlags, doubleSided, 0);
-                                if (instHandle != 0) {
-                                    newInstances.add(instHandle);
+                            java.nio.ByteBuffer vBuf = surface.vertexBuffer();
+                            java.nio.ByteBuffer iBuf = com.nvidia.rtxremix.forge.util.CanonicalIndexBuffer.getBuffer(iCount);
+                            try {
+                                long matHandle;
+                                int doubleSided = 1;
+                                int categoryFlags = 0;
+                                if ("water".equals(surface.bucketKey())) {
+                                    matHandle = waterMaterial != 0 ? waterMaterial : defaultTerrainMaterial;
+                                } else if (surface.category() == SectionMeshData.CAT_OVERLAY) {
+                                    matHandle = cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial;
+                                    categoryFlags = InstanceCategoryBit.DECAL_STATIC;
+                                } else if (surface.category() == SectionMeshData.CAT_CUTOUT) {
+                                    matHandle = cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial;
+                                } else if (surface.category() == SectionMeshData.CAT_TRANSLUCENT) {
+                                    matHandle = translucentTerrainMaterial != 0 ? translucentTerrainMaterial : defaultTerrainMaterial;
+                                } else {
+                                    matHandle = solidTerrainMaterial != 0 ? solidTerrainMaterial : defaultTerrainMaterial;
                                 }
+
+                                MeshInfoSurfaceTriangles surf = new MeshInfoSurfaceTriangles();
+                                surf.vertexBuffer = vBuf;
+                                surf.vertexCount = vCount;
+                                surf.indexBuffer = iBuf;
+                                surf.indexCount = iCount;
+                                surf.material = matHandle;
+                                surf.flags = 0; // Direct atlas sampling without UV re-normalization
+
+                                long hash = java.util.concurrent.ThreadLocalRandom.current().nextLong() | 1L;
+                                MeshInfo mi = MeshInfo.builder()
+                                        .hash(hash)
+                                        .surfaces(surf)
+                                        .build();
+
+                                long mHandle = api.createMesh(mi);
+                                if (mHandle != 0) {
+                                    newMeshes.add(mHandle);
+                                    long instHandle = api.sceneInstanceAdd(mHandle, sectionTransform.matrix, categoryFlags, doubleSided, 0);
+                                    if (instHandle != 0) {
+                                        newInstances.add(instHandle);
+                                    }
+                                }
+                            } catch (Exception e) {
+                                LOGGER.error("Failed creating terrain mesh for section {}", pos, e);
                             }
-                        } catch (Exception e) {
-                            LOGGER.error("Failed creating terrain mesh for section {}", pos, e);
+                        }
+                        if (!newMeshes.isEmpty()) {
+                            sectionMeshes.put(pos, newMeshes);
+                        }
+                        if (!newInstances.isEmpty()) {
+                            sectionInstances.put(pos, newInstances);
                         }
                     }
-                    if (!newMeshes.isEmpty()) {
-                        sectionMeshes.put(pos, newMeshes);
-                    }
-                    if (!newInstances.isEmpty()) {
-                        sectionInstances.put(pos, newInstances);
-                    }
+                } finally {
+                    meshData.release();
                 }
-                meshData.release();
 
                 java.util.List<com.nvidia.rtxremix.forge.light.LightEntry> bLights = blockData.lights();
                 if (bLights != null && !bLights.isEmpty()) {
