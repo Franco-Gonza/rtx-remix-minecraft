@@ -42,7 +42,7 @@ public final class HeldLightManager {
 
     private static final long HELD_LIGHT_HASH_BASE = 0x4845_4C44_0000_0000L; // "HELD"
     private static final float LIGHT_RADIUS = 0.20f;
-    private static final float RADIANCE_SCALE = 1.6f;
+    private static final float RADIANCE_SCALE = 75.0f;
 
     private static boolean enabled = true;
     private static boolean localHeldLightsOff = false;
