@@ -81,10 +81,14 @@ public class SkyRenderer {
         DimensionSpecialEffects effects = world.effects();
         DimensionSpecialEffects.SkyType skyType = effects != null ? effects.skyType() : DimensionSpecialEffects.SkyType.NORMAL;
 
-        // Subterranean and Alex's Caves check: suppress atmospheric sky dome when underground
-        if (cameraPos != null && (cameraPos.y < 0 || isSubterraneanBiome(world, cameraPos))) {
-            renderFixedSky(api, SKYLESS_SKY_RADIANCE);
-            return;
+        // Subterranean check: suppress atmospheric sky dome only when deep underground without skylight
+        if (cameraPos != null) {
+            BlockPos camBlockPos = BlockPos.containing(cameraPos);
+            boolean noSkyAccess = world.getBrightness(net.minecraft.world.level.LightLayer.SKY, camBlockPos) == 0;
+            if ((cameraPos.y < 55 && noSkyAccess) || isSubterraneanBiome(world, cameraPos)) {
+                renderFixedSky(api, SKYLESS_SKY_RADIANCE);
+                return;
+            }
         }
 
         if (skyType == DimensionSpecialEffects.SkyType.NORMAL) {
@@ -173,6 +177,10 @@ public class SkyRenderer {
     }
 
     private void renderFixedSky(RemixAPI api, float[] radiance) {
+        if (sunLightHandle != 0) {
+            try { api.destroyLight(sunLightHandle); } catch (Exception ignored) {}
+            sunLightHandle = 0;
+        }
         float r = radiance[0], g = radiance[1], b = radiance[2];
         if (skyTextureHandle == 0 || r != lastFixedR || g != lastFixedG || b != lastFixedB) {
             fixedSkyBuffer.clear();

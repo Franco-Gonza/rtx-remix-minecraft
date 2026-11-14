@@ -95,7 +95,7 @@ public class BlockTextureManager {
                 transparent = path.contains("leaves") || path.contains("sapling")
                         || path.contains("glass") || path.contains("water") || path.contains("door")
                         || path.contains("grass") || path.contains("flower")
-                        || path.contains("torch") || path.contains("cactus")
+                        || path.contains("torch")
                         || path.contains("plant") || path.contains("stem")
                         || path.contains("crop") || path.contains("rail")
                         || path.contains("chain") || path.contains("lantern")

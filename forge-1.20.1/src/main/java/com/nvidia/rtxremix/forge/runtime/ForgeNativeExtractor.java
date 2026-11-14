@@ -40,6 +40,10 @@ public final class ForgeNativeExtractor {
             return;
         }
 
+        // Always sanitize stale crash telemetry and ensure modal dialog suppression
+        cleanStaleSentryFiles(gameDir);
+        ensureConfOptions(gameDir);
+
         if (Files.exists(d3d9) && Files.exists(bridge) && Files.exists(rtxConf)) {
             LOGGER.debug("RTX Remix runtime and configuration already present in game directory.");
             return;
@@ -48,9 +52,71 @@ public final class ForgeNativeExtractor {
         LOGGER.info("Extracting bundled RTX Remix runtime into {}", gameDir.toAbsolutePath());
         try {
             extractFromJar(gameDir);
+            ensureConfOptions(gameDir);
         } catch (Exception e) {
             LOGGER.error("Failed to extract RTX Remix native runtime from JAR: {}", e.getMessage(), e);
         }
+    }
+
+    public static void cleanStaleSentryFiles(Path gameDir) {
+        try {
+            Path sentryDir = gameDir.resolve("rtx-remix").resolve("logs").resolve(".sentry-native");
+            if (Files.isDirectory(sentryDir)) {
+                try (var stream = Files.newDirectoryStream(sentryDir)) {
+                    for (Path entry : stream) {
+                        String name = entry.getFileName().toString();
+                        if (name.endsWith(".run") || name.endsWith(".dmp") || name.endsWith(".envelope")) {
+                            deleteRecursively(entry);
+                        }
+                    }
+                }
+                Path reports = sentryDir.resolve("reports");
+                if (Files.isDirectory(reports)) {
+                    try (var stream = Files.newDirectoryStream(reports)) {
+                        for (Path entry : stream) {
+                            deleteRecursively(entry);
+                        }
+                    }
+                }
+                Path cache = sentryDir.resolve("cache");
+                if (Files.isDirectory(cache)) {
+                    try (var stream = Files.newDirectoryStream(cache)) {
+                        for (Path entry : stream) {
+                            deleteRecursively(entry);
+                        }
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            LOGGER.debug("Could not clean stale sentry files: {}", t.getMessage());
+        }
+    }
+
+    private static void ensureConfOptions(Path gameDir) {
+        Path rtxConf = gameDir.resolve("rtx.conf");
+        if (Files.exists(rtxConf)) {
+            try {
+                String content = Files.readString(rtxConf);
+                if (!content.contains("rtx.automation.disableBlockingDialogBoxes")) {
+                    Files.writeString(rtxConf, content + System.lineSeparator() + "# Suppress blocking modal dialog boxes (such as crash report popups)" + System.lineSeparator() + "rtx.automation.disableBlockingDialogBoxes = True" + System.lineSeparator());
+                }
+            } catch (Throwable t) {
+                LOGGER.warn("Failed checking/updating rtx.conf options: {}", t.getMessage());
+            }
+        }
+    }
+
+    private static void deleteRecursively(Path path) {
+        try {
+            if (Files.isDirectory(path)) {
+                try (var stream = Files.newDirectoryStream(path)) {
+                    for (Path child : stream) {
+                        deleteRecursively(child);
+                    }
+                }
+            }
+            Files.deleteIfExists(path);
+        } catch (Throwable ignored) {}
     }
 
     private static Path resolveJarPath() {

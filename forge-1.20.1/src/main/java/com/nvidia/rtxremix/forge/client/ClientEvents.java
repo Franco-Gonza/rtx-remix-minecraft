@@ -51,6 +51,12 @@ public final class ClientEvents {
     }
 
     @SubscribeEvent
+    public void onGameShuttingDown(net.minecraftforge.event.GameShuttingDownEvent event) {
+        LOGGER.info("GameShuttingDownEvent received: destroying RTX Remix renderer...");
+        ForgeRemixRenderer.getInstance().destroy();
+    }
+
+    @SubscribeEvent
     public void onChunkUnload(ChunkEvent.Unload event) {
         if (event.getLevel() != null && event.getLevel().isClientSide() && event.getChunk() != null) {
             net.minecraft.world.level.ChunkPos pos = event.getChunk().getPos();

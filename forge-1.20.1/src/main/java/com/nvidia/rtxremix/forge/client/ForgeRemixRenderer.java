@@ -53,6 +53,7 @@ public final class ForgeRemixRenderer {
     private boolean submitFrameCalled = false;
     private long frameIndex = 0;
     private static volatile boolean renderingPostWeather = false;
+    private final java.util.concurrent.atomic.AtomicBoolean destroyed = new java.util.concurrent.atomic.AtomicBoolean(false);
 
     private ForgeRemixRenderer() {}
 
@@ -86,6 +87,7 @@ public final class ForgeRemixRenderer {
         if (initialized && api != null) {
             return true;
         }
+        destroyed.set(false);
 
         long windowHandle = client.getWindow().getWindow();
         if (windowHandle == 0) {
@@ -616,7 +618,7 @@ public final class ForgeRemixRenderer {
                                 surf.indexBuffer = iBuf;
                                 surf.indexCount = iCount;
                                 surf.material = matHandle;
-                                surf.flags = 0; // Direct atlas sampling without UV re-normalization
+                                surf.flags = com.nvidia.rtxremix.MeshInfoSurfaceTriangles.TEXCOORD_BOUNDS; // Enable texture atlas bounds clamping
 
                                 long hash = java.util.concurrent.ThreadLocalRandom.current().nextLong() | 1L;
                                 MeshInfo mi = MeshInfo.builder()
@@ -720,6 +722,7 @@ public final class ForgeRemixRenderer {
                 }
             }
             drainedCaptures.clear();
+            reflagEvictedSections();
 
             // Always update camera to match the rendered frame before scene submit
             if (client.gameRenderer != null && client.gameRenderer.getMainCamera() != null) {
@@ -863,6 +866,17 @@ public final class ForgeRemixRenderer {
         return submitFrameCalled;
     }
 
+    private final java.util.List<com.nvidia.rtxremix.forge.terrain.capture.BlockDataQueue.EvictedSection> evictedScratch = new java.util.ArrayList<>();
+
+    private void reflagEvictedSections() {
+        evictedScratch.clear();
+        com.nvidia.rtxremix.forge.terrain.capture.BlockDataQueue.drainEvictedSections(evictedScratch, 64);
+        if (evictedScratch.isEmpty() || client == null || client.levelRenderer == null) return;
+        for (com.nvidia.rtxremix.forge.terrain.capture.BlockDataQueue.EvictedSection s : evictedScratch) {
+            client.levelRenderer.setSectionDirty(s.x(), s.y(), s.z());
+        }
+    }
+
     public void unloadChunkColumn(int cx, int cz) {
         if (!isInitialized()) return;
         if (client != null && !client.isSameThread()) {
@@ -956,6 +970,9 @@ public final class ForgeRemixRenderer {
     }
 
     public void destroy() {
+        if (!destroyed.compareAndSet(false, true)) {
+            return;
+        }
         submitFrameCalled = false;
         clearLevelState();
         if (entitySubmitter != null) {

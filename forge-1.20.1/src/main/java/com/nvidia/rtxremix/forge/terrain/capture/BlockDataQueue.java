@@ -22,10 +22,10 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 public final class BlockDataQueue {
 
-    private static final int DEFAULT_MAX_PENDING_ITEMS = 512;
-    private static final long DEFAULT_MAX_PENDING_BYTES = 128L * 1024L * 1024L;
-    private static final int DEFAULT_MAX_DRAIN_ITEMS = 32;
-    private static final long DEFAULT_MAX_DRAIN_BYTES = 8L * 1024L * 1024L;
+    private static final int DEFAULT_MAX_PENDING_ITEMS = 2048;
+    private static final long DEFAULT_MAX_PENDING_BYTES = 256L * 1024L * 1024L;
+    private static final int DEFAULT_MAX_DRAIN_ITEMS = 128;
+    private static final long DEFAULT_MAX_DRAIN_BYTES = 32L * 1024L * 1024L;
     private static final int MAX_PENDING_ITEMS = Math.max(16,
             Integer.getInteger("rtxremix.blockDataQueue.maxPendingItems", DEFAULT_MAX_PENDING_ITEMS));
     private static final long MAX_PENDING_BYTES = Math.max(16L * 1024L * 1024L,

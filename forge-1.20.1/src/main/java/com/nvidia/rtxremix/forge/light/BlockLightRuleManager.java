@@ -35,7 +35,12 @@ public final class BlockLightRuleManager {
 
     public static boolean hasMatchingRules(BlockState state) {
         if (state == null || state.isAir()) return false;
-        return state.getLightEmission() > 0;
+        return state.is(Blocks.TORCH) || state.is(Blocks.WALL_TORCH)
+                || state.is(Blocks.SOUL_TORCH) || state.is(Blocks.SOUL_WALL_TORCH)
+                || state.is(Blocks.REDSTONE_TORCH) || state.is(Blocks.REDSTONE_WALL_TORCH)
+                || state.is(Blocks.CAMPFIRE) || state.is(Blocks.SOUL_CAMPFIRE)
+                || state.is(Blocks.LANTERN) || state.is(Blocks.SOUL_LANTERN)
+                || state.is(Blocks.END_ROD);
     }
 
     public static List<LightEntry> resolve(BlockState state, BlockPos pos, ModelSampler sampler) {
@@ -124,65 +129,14 @@ public final class BlockLightRuleManager {
             radius = 0.10f;
             colorR = 0.05f; colorG = 0.2f; colorB = 1.0f;
             intensityScale = 15.0f;
-        } else if (state.is(Blocks.GLOWSTONE)) {
-            ruleName = "glowstone";
-            x = 0.5f; y = 0.5f; z = 0.5f;
-            radius = 0.20f;
-            colorR = 1.0f; colorG = 0.80f; colorB = 0.35f;
-            intensityScale = 15.0f;
-        } else if (state.is(Blocks.SEA_LANTERN)) {
-            ruleName = "sea_lantern";
-            x = 0.5f; y = 0.5f; z = 0.5f;
-            radius = 0.20f;
-            colorR = 0.55f; colorG = 0.90f; colorB = 1.0f;
-            intensityScale = 15.0f;
-        } else if (state.is(Blocks.SHROOMLIGHT)) {
-            ruleName = "shroomlight";
-            x = 0.5f; y = 0.5f; z = 0.5f;
-            radius = 0.20f;
-            colorR = 1.0f; colorG = 0.65f; colorB = 0.20f;
-            intensityScale = 15.0f;
-        } else if (state.is(Blocks.OCHRE_FROGLIGHT)) {
-            ruleName = "ochre_froglight";
-            x = 0.5f; y = 0.5f; z = 0.5f;
-            radius = 0.20f;
-            colorR = 1.0f; colorG = 0.85f; colorB = 0.40f;
-            intensityScale = 15.0f;
-        } else if (state.is(Blocks.VERDANT_FROGLIGHT)) {
-            ruleName = "verdant_froglight";
-            x = 0.5f; y = 0.5f; z = 0.5f;
-            radius = 0.20f;
-            colorR = 0.45f; colorG = 1.0f; colorB = 0.45f;
-            intensityScale = 15.0f;
-        } else if (state.is(Blocks.PEARLESCENT_FROGLIGHT)) {
-            ruleName = "pearlescent_froglight";
-            x = 0.5f; y = 0.5f; z = 0.5f;
-            radius = 0.20f;
-            colorR = 0.90f; colorG = 0.55f; colorB = 1.0f;
-            intensityScale = 15.0f;
-        } else if (state.is(Blocks.REDSTONE_LAMP)) {
-            ruleName = "redstone_lamp";
-            x = 0.5f; y = 0.5f; z = 0.5f;
-            radius = 0.20f;
-            colorR = 1.0f; colorG = 0.65f; colorB = 0.25f;
-            intensityScale = 15.0f;
         } else if (state.is(Blocks.END_ROD)) {
             ruleName = "end_rod";
             x = 0.5f; y = 0.5f; z = 0.5f;
             radius = 0.08f;
             colorR = 0.95f; colorG = 0.95f; colorB = 1.0f;
             intensityScale = 15.0f;
-        } else if (state.is(Blocks.LAVA)) {
-            ruleName = "lava";
-            x = 0.5f; y = 0.5f; z = 0.5f;
-            radius = 0.25f;
-            colorR = 1.0f; colorG = 0.35f; colorB = 0.05f;
-            intensityScale = 20.0f;
         } else {
-            if (sampler != null) {
-                float[] center = sampler.centroid();
-                x = center[0]; y = center[1]; z = center[2];
-            }
+            return Collections.emptyList();
         }
 
         float worldX = pos.getX() + x;
