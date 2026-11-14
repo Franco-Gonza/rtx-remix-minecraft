@@ -84,6 +84,14 @@ public final class RemixParticleRenderer {
         this.client = client;
     }
 
+    public long getParticleAtlasTexture() {
+        return particleAtlasTexture;
+    }
+
+    public long getParticleMaterial() {
+        return particleMaterial;
+    }
+
     public void initialize(RemixAPI api) {
         if (api == null) return;
         ensureMaterials(api);
@@ -138,7 +146,10 @@ public final class RemixParticleRenderer {
                                 .albedoConstant(1.0f, 1.0f, 1.0f)
                                 .roughnessConstant(1.0f)
                                 .metallicConstant(0.0f)
-                                .useDrawCallAlphaState(true)
+                                .blendType(MaterialInfoOpaqueEXT.BLEND_TYPE_ALPHA)
+                                .useDrawCallAlphaState(false)
+                                .alphaTestType(6)
+                                .alphaReferenceValue(10)
                                 .build();
 
                         MaterialInfo matInfo = MaterialInfo.builder()

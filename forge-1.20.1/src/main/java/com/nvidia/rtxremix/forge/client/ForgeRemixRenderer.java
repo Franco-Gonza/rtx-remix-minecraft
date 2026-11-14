@@ -754,9 +754,8 @@ public final class ForgeRemixRenderer {
             }
 
             // Forward animated sprite atlas patches to Remix before submitting frame
-            if (terrainAtlasTexture != 0) {
-                com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.flush(api, terrainAtlasTexture);
-            }
+            long pAtlas = particleRenderer != null ? particleRenderer.getParticleAtlasTexture() : 0;
+            com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.flush(api, terrainAtlasTexture, pAtlas);
 
             // Draw sky lights and dynamic held lights right before frame submit
             if (skyRenderer != null) {
