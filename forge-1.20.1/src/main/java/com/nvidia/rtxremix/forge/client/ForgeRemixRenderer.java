@@ -96,6 +96,7 @@ public final class ForgeRemixRenderer {
         LOGGER.info("Initializing RTX Remix API against Win32 HWND: 0x{}", Long.toHexString(hwnd));
 
         try {
+            com.nvidia.rtxremix.forge.runtime.ForgeNativeExtractor.ensureExtracted();
             java.nio.file.Path d3d9 = net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get()
                     .resolve("remix-sdk").resolve("d3d9.dll");
             String dllPath = d3d9.toAbsolutePath().toString();
