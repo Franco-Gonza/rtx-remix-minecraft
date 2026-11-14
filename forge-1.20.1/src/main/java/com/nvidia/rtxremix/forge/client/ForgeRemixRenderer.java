@@ -35,6 +35,7 @@ public final class ForgeRemixRenderer {
     private TextureOverlay overlay;
     private com.nvidia.rtxremix.forge.entity.RemixEntitySubmitter entitySubmitter;
     private com.nvidia.rtxremix.forge.entity.RemixEntityPass entityPass;
+    private com.nvidia.rtxremix.forge.particle.RemixParticleRenderer particleRenderer;
     private long terrainAtlasTexture = 0;
     private long defaultTerrainMaterial = 0;
     private long solidTerrainMaterial = 0;
@@ -136,6 +137,8 @@ public final class ForgeRemixRenderer {
             }
             entitySubmitter = new com.nvidia.rtxremix.forge.entity.RemixEntitySubmitter(api);
             entityPass = new com.nvidia.rtxremix.forge.entity.RemixEntityPass();
+            particleRenderer = new com.nvidia.rtxremix.forge.particle.RemixParticleRenderer(client);
+            particleRenderer.initialize(api);
             confLayerDriver.acquireAll(api, net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get());
             active = true;
             initialized = true;
@@ -223,9 +226,11 @@ public final class ForgeRemixRenderer {
             int texId = atlas.getId();
             if (texId <= 0) return;
 
+            int prevTex = org.lwjgl.opengl.GL11.glGetInteger(org.lwjgl.opengl.GL11.GL_TEXTURE_BINDING_2D);
             org.lwjgl.opengl.GL11.glBindTexture(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, texId);
-            int width = org.lwjgl.opengl.GL11.glGetTexLevelParameteri(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, 0, org.lwjgl.opengl.GL11.GL_TEXTURE_WIDTH);
-            int height = org.lwjgl.opengl.GL11.glGetTexLevelParameteri(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, 0, org.lwjgl.opengl.GL11.GL_TEXTURE_HEIGHT);
+            try {
+                int width = org.lwjgl.opengl.GL11.glGetTexLevelParameteri(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, 0, org.lwjgl.opengl.GL11.GL_TEXTURE_WIDTH);
+                int height = org.lwjgl.opengl.GL11.glGetTexLevelParameteri(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, 0, org.lwjgl.opengl.GL11.GL_TEXTURE_HEIGHT);
 
             if (width > 0 && height > 0) {
                 java.nio.ByteBuffer buffer = org.lwjgl.system.MemoryUtil.memAlloc(width * height * 4);
@@ -366,38 +371,71 @@ public final class ForgeRemixRenderer {
                     org.lwjgl.system.MemoryUtil.memFree(buffer);
                 }
             }
-        } catch (Exception e) {
+        } finally {
+            org.lwjgl.opengl.GL11.glBindTexture(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, prevTex);
+        }
+    } catch (Exception e) {
             LOGGER.error("Failed to capture and upload terrain atlas: {}", e.getMessage(), e);
         }
     }
 
     private static byte[] stitchAtlasRGBA(net.minecraft.client.renderer.texture.TextureAtlas atlas, int width, int height) {
         byte[] buf = new byte[width * height * 4];
-        java.util.Set<net.minecraft.resources.ResourceLocation> locations = atlas.getTextureLocations();
-        if (locations != null) {
-            for (net.minecraft.resources.ResourceLocation loc : locations) {
-                net.minecraft.client.renderer.texture.TextureAtlasSprite sprite = atlas.getSprite(loc);
-                if (sprite == null) continue;
-                net.minecraft.client.renderer.texture.SpriteContents contents = sprite.contents();
-                if (contents == null) continue;
-                com.mojang.blaze3d.platform.NativeImage img = contents.getOriginalImage();
-                if (img == null) continue;
+        int stitchedCount = 0;
+        int nonZeroPixels = 0;
+        try {
+            java.util.Set<net.minecraft.resources.ResourceLocation> locations = atlas.getTextureLocations();
+            if (locations != null && !locations.isEmpty()) {
+                for (net.minecraft.resources.ResourceLocation loc : locations) {
+                    net.minecraft.client.renderer.texture.TextureAtlasSprite sprite = atlas.getSprite(loc);
+                    if (sprite == null) continue;
+                    net.minecraft.client.renderer.texture.SpriteContents contents = sprite.contents();
+                    if (contents == null) continue;
+                    com.mojang.blaze3d.platform.NativeImage img = contents.getOriginalImage();
+                    if (img == null) continue;
 
-                int sx = sprite.getX();
-                int sy = sprite.getY();
-                int sw = contents.width();
-                int sh = contents.height();
+                    int sx = sprite.getX();
+                    int sy = sprite.getY();
+                    int sw = contents.width();
+                    int sh = contents.height();
 
-                for (int y = 0; y < sh && (sy + y) < height; y++) {
-                    for (int x = 0; x < sw && (sx + x) < width; x++) {
-                        int abgr = img.getPixelRGBA(x, y);
-                        int idx = ((sy + y) * width + (sx + x)) * 4;
-                        buf[idx]     = (byte) (abgr & 0xFF);         // R
-                        buf[idx + 1] = (byte) ((abgr >> 8) & 0xFF);  // G
-                        buf[idx + 2] = (byte) ((abgr >> 16) & 0xFF); // B
-                        buf[idx + 3] = (byte) ((abgr >> 24) & 0xFF); // A
+                    for (int y = 0; y < sh && (sy + y) < height; y++) {
+                        for (int x = 0; x < sw && (sx + x) < width; x++) {
+                            int abgr = img.getPixelRGBA(x, y);
+                            int idx = ((sy + y) * width + (sx + x)) * 4;
+                            byte r = (byte) (abgr & 0xFF);
+                            byte g = (byte) ((abgr >> 8) & 0xFF);
+                            byte b = (byte) ((abgr >> 16) & 0xFF);
+                            byte a = (byte) ((abgr >> 24) & 0xFF);
+                            buf[idx]     = r;
+                            buf[idx + 1] = g;
+                            buf[idx + 2] = b;
+                            buf[idx + 3] = a;
+                            if (r != 0 || g != 0 || b != 0 || a != 0) {
+                                nonZeroPixels++;
+                            }
+                        }
                     }
+                    stitchedCount++;
                 }
+            }
+        } catch (Throwable t) {
+            LOGGER.warn("CPU atlas stitching encountered error: {}", t.getMessage());
+        }
+
+        LOGGER.info("CPU atlas stitch result: {} sprites stitched, {} non-zero pixels out of {}",
+                stitchedCount, nonZeroPixels, width * height);
+
+        // Fallback to glGetTexImage if CPU stitching did not populate the atlas
+        if (stitchedCount == 0 || nonZeroPixels < 1000) {
+            LOGGER.warn("CPU atlas stitching produced insufficient pixels ({}). Falling back to glGetTexImage...", nonZeroPixels);
+            java.nio.ByteBuffer glBuf = org.lwjgl.system.MemoryUtil.memAlloc(width * height * 4);
+            try {
+                org.lwjgl.opengl.GL11.glGetTexImage(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, 0,
+                        org.lwjgl.opengl.GL11.GL_RGBA, org.lwjgl.opengl.GL11.GL_UNSIGNED_BYTE, glBuf);
+                glBuf.get(buf);
+            } finally {
+                org.lwjgl.system.MemoryUtil.memFree(glBuf);
             }
         }
         return buf;
@@ -539,14 +577,12 @@ public final class ForgeRemixRenderer {
 
                             long matHandle;
                             long pNext = 0;
-                            int doubleSided = 0;
+                            int doubleSided = 1;
                             if ("water".equals(surface.bucketKey())) {
                                 matHandle = waterMaterial != 0 ? waterMaterial : defaultTerrainMaterial;
-                                doubleSided = 1;
                             } else if (surface.category() == SectionMeshData.CAT_CUTOUT) {
                                 matHandle = cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial;
                                 pNext = cutoutBlendExtPtr;
-                                doubleSided = 1;
                             } else if (surface.category() == SectionMeshData.CAT_TRANSLUCENT) {
                                 matHandle = translucentTerrainMaterial != 0 ? translucentTerrainMaterial : defaultTerrainMaterial;
                                 pNext = transBlendExtPtr;
@@ -689,6 +725,11 @@ public final class ForgeRemixRenderer {
                 }
             }
 
+            // Render particles through RTX Remix
+            if (particleRenderer != null && client.gameRenderer != null && client.gameRenderer.getMainCamera() != null) {
+                particleRenderer.render(api, client.gameRenderer.getMainCamera(), 1.0f, cutoutTerrainMaterial);
+            }
+
             // Submit frame to RTX Remix runtime
             api.submit(null);
             submitFrameCalled = true;
@@ -784,6 +825,9 @@ public final class ForgeRemixRenderer {
         if (skyRenderer != null && api != null) {
             skyRenderer.clearLevelState(api);
         }
+        if (particleRenderer != null && api != null) {
+            particleRenderer.destroy(api);
+        }
         LOGGER.info("Cleared level terrain and sky state in RTX Remix.");
     }
 
@@ -793,6 +837,10 @@ public final class ForgeRemixRenderer {
         if (entitySubmitter != null) {
             entitySubmitter.destroy();
             entitySubmitter = null;
+        }
+        if (particleRenderer != null) {
+            particleRenderer.destroy(api);
+            particleRenderer = null;
         }
         if (confLayerDriver != null) {
             confLayerDriver.releaseAll();

@@ -11,6 +11,10 @@
         "ReceivingLevelScreenMixin",
         "ChunkRenderDispatcherRebuildTaskMixin",
         "LevelRendererMixin",
+        "ParticleEngineAccessor",
+        "ParticleAccessor",
+        "SingleQuadParticleAccessor",
+        "TextureSheetParticleAccessor",
         "compatibility.GeckoLibGeoRendererMixin",
         "compatibility.CitadelAdvancedModelBoxMixin"
     ],
