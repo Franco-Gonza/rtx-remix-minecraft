@@ -885,6 +885,9 @@ public final class ForgeRemixRenderer {
         if (particleRenderer != null && api != null) {
             particleRenderer.destroy(api);
         }
+        if (entitySubmitter != null) {
+            entitySubmitter.clearInstances();
+        }
         LOGGER.info("Cleared level terrain and sky state in RTX Remix.");
     }
 

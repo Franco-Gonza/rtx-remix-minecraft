@@ -410,6 +410,24 @@ public class RemixEntitySubmitter {
         }
     }
 
+    public void clearInstances() {
+        for (Long instance : retainedInstances.values()) {
+            if (instance != null && instance != 0) {
+                try {
+                    api.sceneInstanceRemove(instance);
+                } catch (Exception ignored) {}
+            }
+        }
+        retainedInstances.clear();
+        instancesByEntity.clear();
+        for (long mesh : transientMeshes) {
+            try {
+                api.destroyMesh(mesh);
+            } catch (Exception ignored) {}
+        }
+        transientMeshes.clear();
+    }
+
     public void destroy() {
         for (Long instance : retainedInstances.values()) {
             try {
