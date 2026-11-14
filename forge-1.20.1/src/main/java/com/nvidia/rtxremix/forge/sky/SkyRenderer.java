@@ -167,9 +167,6 @@ public class SkyRenderer {
                 try { api.destroyLight(sunLightHandle); } catch (Exception ignored) {}
             }
             sunLightHandle = newHandle;
-            if (sunLightHandle != 0) {
-                api.drawLightInstance(sunLightHandle);
-            }
         } catch (Exception e) {
             LOGGER.warn("Sun light update failed: {}", e.getMessage());
         }
@@ -193,10 +190,6 @@ public class SkyRenderer {
             lastFixedR = r;
             lastFixedG = g;
             lastFixedB = b;
-        } else if (skyDomeLightHandle != 0) {
-            try {
-                api.drawLightInstance(skyDomeLightHandle);
-            } catch (Exception ignored) {}
         }
 
         publishSkyAmbient(api, r, g, b);
@@ -230,10 +223,6 @@ public class SkyRenderer {
                     LOGGER.debug("Sky dome texture update skipped: {}", e.getMessage());
                 }
             }
-
-            if (skyDomeLightHandle != 0) {
-                api.drawLightInstance(skyDomeLightHandle);
-            }
         } catch (Exception e) {
             LOGGER.warn("Sky dome draw failed: {}", e.getMessage());
         }
@@ -263,10 +252,6 @@ public class SkyRenderer {
                 try { api.destroyLight(skyAmbientRectHandle); } catch (Exception ignored) {}
             }
             skyAmbientRectHandle = newHandle;
-
-            if (skyAmbientRectHandle != 0) {
-                api.drawLightInstance(skyAmbientRectHandle);
-            }
         } catch (Exception e) {
             LOGGER.warn("Sky ambient rect draw failed: {}", e.getMessage());
         }
