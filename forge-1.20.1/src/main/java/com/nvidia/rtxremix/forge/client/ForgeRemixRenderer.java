@@ -746,6 +746,11 @@ public final class ForgeRemixRenderer {
                 particleRenderer.render(api, client.gameRenderer.getMainCamera(), 1.0f, cutoutTerrainMaterial);
             }
 
+            // Forward animated sprite atlas patches to Remix before submitting frame
+            if (terrainAtlasTexture != 0) {
+                com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.flush(api, terrainAtlasTexture);
+            }
+
             // Submit frame to RTX Remix runtime
             api.submit(null);
             submitFrameCalled = true;
