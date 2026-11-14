@@ -46,10 +46,6 @@ public final class ForgeRemixRenderer {
     private long translucentTerrainMaterial = 0;
     private long waterNormalTexture = 0;
     private long waterWhiteTexture = 0;
-    private long solidBlendExtPtr = 0;
-    private long cutoutBlendExtPtr = 0;
-    private long overlayBlendExtPtr = 0;
-    private long transBlendExtPtr = 0;
     private float lastPartialTicks = 0.0f;
 
     private boolean initialized = false;
@@ -283,20 +279,6 @@ public final class ForgeRemixRenderer {
                     terrainAtlasTexture = api.createTextureFromMemory(texInfo);
                     LOGGER.info("Stitched and uploaded Minecraft terrain atlas texture ({}x{}) to RTX Remix: handle=0x{}",
                             width, height, Long.toHexString(terrainAtlasTexture));
-
-                    if (solidBlendExtPtr == 0) {
-                        InstanceInfoBlendEXT solidBlend = InstanceInfoBlendEXT.textureTimesVertexColor();
-                        solidBlendExtPtr = solidBlend.allocNative(0);
-
-                        InstanceInfoBlendEXT cutoutBlend = InstanceInfoBlendEXT.textureTimesVertexColorAlphaTest(128);
-                        cutoutBlendExtPtr = cutoutBlend.allocNative(0);
-
-                        InstanceInfoBlendEXT overlayBlend = InstanceInfoBlendEXT.textureTimesVertexColorAlphaBlend(1);
-                        overlayBlendExtPtr = overlayBlend.allocNative(0);
-
-                        InstanceInfoBlendEXT transBlend = InstanceInfoBlendEXT.textureTimesVertexColor();
-                        transBlendExtPtr = transBlend.allocNative(0);
-                    }
 
                     // 1. Solid terrain material (opaque block atlas)
                     MaterialInfoOpaqueEXT solidOpaque = MaterialInfoOpaqueEXT.builder()
@@ -624,25 +606,19 @@ public final class ForgeRemixRenderer {
                             iBuf.flip();
 
                             long matHandle;
-                            long pNext = 0;
                             int doubleSided = 1;
                             int categoryFlags = 0;
                             if ("water".equals(surface.bucketKey())) {
                                 matHandle = waterMaterial != 0 ? waterMaterial : defaultTerrainMaterial;
-                                pNext = transBlendExtPtr;
                             } else if (surface.category() == SectionMeshData.CAT_OVERLAY) {
                                 matHandle = cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial;
                                 categoryFlags = InstanceCategoryBit.DECAL_STATIC;
-                                pNext = overlayBlendExtPtr;
                             } else if (surface.category() == SectionMeshData.CAT_CUTOUT) {
                                 matHandle = cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial;
-                                pNext = cutoutBlendExtPtr;
                             } else if (surface.category() == SectionMeshData.CAT_TRANSLUCENT) {
                                 matHandle = translucentTerrainMaterial != 0 ? translucentTerrainMaterial : defaultTerrainMaterial;
-                                pNext = transBlendExtPtr;
                             } else {
                                 matHandle = solidTerrainMaterial != 0 ? solidTerrainMaterial : defaultTerrainMaterial;
-                                pNext = solidBlendExtPtr;
                             }
 
                             MeshInfoSurfaceTriangles surf = new MeshInfoSurfaceTriangles();
@@ -651,7 +627,7 @@ public final class ForgeRemixRenderer {
                             surf.indexBuffer = iBuf;
                             surf.indexCount = iCount;
                             surf.material = matHandle;
-                            surf.flags = MeshInfoSurfaceTriangles.TEXCOORD_BOUNDS;
+                            surf.flags = 0; // Direct atlas sampling without UV re-normalization
 
                             long hash = (((long) pos.hashCode()) << 32) ^ surface.category() ^ vCount;
                             MeshInfo mi = MeshInfo.builder()
@@ -662,7 +638,7 @@ public final class ForgeRemixRenderer {
                             long mHandle = api.createMesh(mi);
                             if (mHandle != 0) {
                                 newMeshes.add(mHandle);
-                                long instHandle = api.sceneInstanceAdd(mHandle, sectionTransform.matrix, categoryFlags, doubleSided, pNext);
+                                long instHandle = api.sceneInstanceAdd(mHandle, sectionTransform.matrix, categoryFlags, doubleSided, 0);
                                 if (instHandle != 0) {
                                     newInstances.add(instHandle);
                                 }
@@ -967,22 +943,6 @@ public final class ForgeRemixRenderer {
         if (terrainAtlasTexture != 0) {
             try { api.destroyTexture(terrainAtlasTexture); } catch (Exception ignored) {}
             terrainAtlasTexture = 0;
-        }
-        if (solidBlendExtPtr != 0) {
-            RemixBridge.freeExt(solidBlendExtPtr);
-            solidBlendExtPtr = 0;
-        }
-        if (cutoutBlendExtPtr != 0) {
-            RemixBridge.freeExt(cutoutBlendExtPtr);
-            cutoutBlendExtPtr = 0;
-        }
-        if (overlayBlendExtPtr != 0) {
-            RemixBridge.freeExt(overlayBlendExtPtr);
-            overlayBlendExtPtr = 0;
-        }
-        if (transBlendExtPtr != 0) {
-            RemixBridge.freeExt(transBlendExtPtr);
-            transBlendExtPtr = 0;
         }
         defaultTerrainMaterial = 0;
         if (interop != null) {

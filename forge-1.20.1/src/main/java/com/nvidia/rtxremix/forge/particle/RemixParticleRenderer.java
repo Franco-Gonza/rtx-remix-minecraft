@@ -6,7 +6,6 @@ package com.nvidia.rtxremix.forge.particle;
 
 import com.nvidia.rtxremix.HardcodedVertex;
 import com.nvidia.rtxremix.InstanceCategoryBit;
-import com.nvidia.rtxremix.InstanceInfoBlendEXT;
 import com.nvidia.rtxremix.MaterialInfo;
 import com.nvidia.rtxremix.MaterialInfoOpaqueEXT;
 import com.nvidia.rtxremix.MeshInfo;
@@ -70,8 +69,6 @@ public final class RemixParticleRenderer {
     private int lastAtlasTexId = -1;
     private long particleAtlasTexture = 0;
     private long particleMaterial = 0;
-    private long particleBlendExtPtr = 0;
-    private long terrainBlendExtPtr = 0;
 
     // Double-buffered frame meshes to clean up after submit
     private final List<Long> activeMeshes = new ArrayList<>();
@@ -160,15 +157,6 @@ public final class RemixParticleRenderer {
                                 .build();
                         particleMaterial = api.createMaterial(matInfo);
                         LOGGER.info("Created RTX Remix particle material: handle=0x{}", Long.toHexString(particleMaterial));
-
-                        if (particleBlendExtPtr == 0) {
-                            InstanceInfoBlendEXT pBlend = InstanceInfoBlendEXT.textureTimesVertexColorAlphaBlend(10);
-                            particleBlendExtPtr = pBlend.allocNative(0);
-                        }
-                        if (terrainBlendExtPtr == 0) {
-                            InstanceInfoBlendEXT tBlend = InstanceInfoBlendEXT.textureTimesVertexColorAlphaTest(128);
-                            terrainBlendExtPtr = tBlend.allocNative(0);
-                        }
                     } finally {
                         MemoryUtil.memFree(buf);
                     }
@@ -208,16 +196,15 @@ public final class RemixParticleRenderer {
             long matHandle = isTerrain
                     ? (terrainCutoutMaterial != 0 ? terrainCutoutMaterial : particleMaterial)
                     : particleMaterial;
-            long pNext = isTerrain ? terrainBlendExtPtr : particleBlendExtPtr;
             int categoryFlags = isTerrain ? 0 : InstanceCategoryBit.PARTICLE;
 
-            renderParticleQueue(api, queue, basis, partialTicks, matHandle, pNext, categoryFlags);
+            renderParticleQueue(api, queue, basis, partialTicks, matHandle, categoryFlags);
         }
     }
 
     private void renderParticleQueue(RemixAPI api, Queue<Particle> queue,
                                      ParticleBillboardBasis basis, float partialTicks,
-                                     long materialHandle, long pNext, int categoryFlags) {
+                                     long materialHandle, int categoryFlags) {
         int count = 0;
         vertexBuffer.clear();
         indexBuffer.clear();
@@ -271,7 +258,7 @@ public final class RemixParticleRenderer {
 
             count++;
             if (count >= MAX_PARTICLES_PER_BATCH) {
-                flushBatch(api, count, materialHandle, pNext, categoryFlags);
+                flushBatch(api, count, materialHandle, categoryFlags);
                 count = 0;
                 vertexBuffer.clear();
                 indexBuffer.clear();
@@ -279,11 +266,11 @@ public final class RemixParticleRenderer {
         }
 
         if (count > 0) {
-            flushBatch(api, count, materialHandle, pNext, categoryFlags);
+            flushBatch(api, count, materialHandle, categoryFlags);
         }
     }
 
-    private void flushBatch(RemixAPI api, int count, long materialHandle, long pNext, int categoryFlags) {
+    private void flushBatch(RemixAPI api, int count, long materialHandle, int categoryFlags) {
         try {
             vertexBuffer.position(0);
             indexBuffer.position(0);
@@ -294,7 +281,7 @@ public final class RemixParticleRenderer {
             surf.indexBuffer = indexBuffer;
             surf.indexCount = count * INDICES_PER_PARTICLE;
             surf.material = materialHandle;
-            surf.flags = MeshInfoSurfaceTriangles.TEXCOORD_BOUNDS;
+            surf.flags = 0; // Direct atlas sampling without UV re-normalization
 
             long meshHash = MESH_HASH_COUNTER.incrementAndGet();
             MeshInfo mi = MeshInfo.builder()
@@ -305,7 +292,7 @@ public final class RemixParticleRenderer {
             long mHandle = api.createMesh(mi);
             if (mHandle != 0) {
                 activeMeshes.add(mHandle);
-                api.drawInstance(mHandle, IDENTITY_TRANSFORM, categoryFlags, 1, pNext);
+                api.drawInstance(mHandle, IDENTITY_TRANSFORM, categoryFlags, 1, 0);
             }
         } catch (Exception e) {
             LOGGER.debug("Failed drawing particle batch: {}", e.getMessage());
@@ -416,14 +403,6 @@ public final class RemixParticleRenderer {
                 particleAtlasTexture = 0;
             }
             lastAtlasTexId = -1;
-            if (particleBlendExtPtr != 0) {
-                RemixBridge.freeExt(particleBlendExtPtr);
-                particleBlendExtPtr = 0;
-            }
-            if (terrainBlendExtPtr != 0) {
-                RemixBridge.freeExt(terrainBlendExtPtr);
-                terrainBlendExtPtr = 0;
-            }
         }
     }
 
