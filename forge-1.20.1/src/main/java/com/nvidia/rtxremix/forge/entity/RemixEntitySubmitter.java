@@ -31,12 +31,12 @@ public class RemixEntitySubmitter {
 
     private final RemixAPI api;
 
-    private record EntityPartKey(Entity entity, int layerIndex) {}
+    private record EntityPartKey(Object entity, int layerIndex) {}
     private record MaterialKey(ResourceLocation textureId, RenderLayerUtils.SurfaceMode mode) {}
 
     private final Map<EntityPartKey, Long> retainedInstances = new HashMap<>();
-    private final Map<Entity, List<EntityPartKey>> instancesByEntity = new HashMap<>();
-    private final Set<Entity> seenEntitiesThisFrame = new HashSet<>();
+    private final Map<Object, List<EntityPartKey>> instancesByEntity = new HashMap<>();
+    private final Set<Object> seenEntitiesThisFrame = new HashSet<>();
 
     private final Map<MaterialKey, Long> materialCache = new HashMap<>();
     private final Map<ResourceLocation, Long> textureCache = new HashMap<>();
@@ -86,12 +86,16 @@ public class RemixEntitySubmitter {
         transientMeshes.clear();
     }
 
+    public void submitEntity(EntityCaptureResult result) {
+        submitEntity(result, Vec3.ZERO);
+    }
+
     public void submitEntity(EntityCaptureResult result, Vec3 renderOffset) {
         if (result == null || result.layers().isEmpty()) {
             return;
         }
 
-        Entity entity = result.entity();
+        Object entity = result.entity();
         seenEntitiesThisFrame.add(entity);
 
         Transform worldTransform = new Transform();
@@ -204,7 +208,7 @@ public class RemixEntitySubmitter {
             }
             drawCount++;
         } catch (Exception e) {
-            LOGGER.error("Failed to submit scene instance for entity {}", result.entity().getType(), e);
+            LOGGER.error("Failed to submit scene instance for entity {}", result.entityTypeKey(), e);
         }
     }
 
@@ -381,11 +385,17 @@ public class RemixEntitySubmitter {
     }
 
     public void endFrame() {
-        Iterator<Map.Entry<Entity, List<EntityPartKey>>> it = instancesByEntity.entrySet().iterator();
+        Iterator<Map.Entry<Object, List<EntityPartKey>>> it = instancesByEntity.entrySet().iterator();
         while (it.hasNext()) {
-            Map.Entry<Entity, List<EntityPartKey>> entry = it.next();
-            Entity entity = entry.getKey();
-            if (!seenEntitiesThisFrame.contains(entity) || !entity.isAlive()) {
+            Map.Entry<Object, List<EntityPartKey>> entry = it.next();
+            Object entity = entry.getKey();
+            boolean alive = true;
+            if (entity instanceof Entity e) {
+                alive = e.isAlive();
+            } else if (entity instanceof net.minecraft.world.level.block.entity.BlockEntity be) {
+                alive = !be.isRemoved();
+            }
+            if (!seenEntitiesThisFrame.contains(entity) || !alive) {
                 for (EntityPartKey partKey : entry.getValue()) {
                     Long instance = retainedInstances.remove(partKey);
                     if (instance != null) {

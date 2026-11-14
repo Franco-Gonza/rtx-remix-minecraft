@@ -35,6 +35,7 @@ public final class ForgeRemixRenderer {
     private TextureOverlay overlay;
     private com.nvidia.rtxremix.forge.entity.RemixEntitySubmitter entitySubmitter;
     private com.nvidia.rtxremix.forge.entity.RemixEntityPass entityPass;
+    private com.nvidia.rtxremix.forge.entity.RemixBlockEntityPass blockEntityPass;
     private com.nvidia.rtxremix.forge.particle.RemixParticleRenderer particleRenderer;
     private long terrainAtlasTexture = 0;
     private long defaultTerrainMaterial = 0;
@@ -123,7 +124,7 @@ public final class ForgeRemixRenderer {
                         .albedoConstant(1.0f, 1.0f, 1.0f)
                         .roughnessConstant(0.8f)
                         .metallicConstant(0.0f)
-                        .useDrawCallAlphaState(true)
+                        .useDrawCallAlphaState(false)
                         .build();
                 MaterialInfo matInfo = MaterialInfo.builder()
                         .opaqueExt(opaque)
@@ -134,6 +135,7 @@ public final class ForgeRemixRenderer {
             }
             entitySubmitter = new com.nvidia.rtxremix.forge.entity.RemixEntitySubmitter(api);
             entityPass = new com.nvidia.rtxremix.forge.entity.RemixEntityPass();
+            blockEntityPass = new com.nvidia.rtxremix.forge.entity.RemixBlockEntityPass();
             particleRenderer = new com.nvidia.rtxremix.forge.particle.RemixParticleRenderer(client);
             particleRenderer.initialize(api);
             confLayerDriver.acquireAll(api, net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get());
@@ -220,6 +222,9 @@ public final class ForgeRemixRenderer {
         if (entityPass != null && entitySubmitter != null) {
             entityPass.beginFrame(entitySubmitter);
         }
+        if (blockEntityPass != null) {
+            blockEntityPass.beginFrame();
+        }
     }
 
     public void updateTerrainMaterialIfReady() {
@@ -261,7 +266,7 @@ public final class ForgeRemixRenderer {
                             .albedoConstant(1.0f, 1.0f, 1.0f)
                             .roughnessConstant(0.8f)
                             .metallicConstant(0.0f)
-                            .useDrawCallAlphaState(true)
+                            .useDrawCallAlphaState(false)
                             .build();
                     MaterialInfo solidInfo = MaterialInfo.builder()
                             .hash(0x4D41_545F_534F_4C49L) // "MAT_SOLI"
@@ -279,7 +284,7 @@ public final class ForgeRemixRenderer {
                             .metallicConstant(0.0f)
                             .alphaTestType(4) // GREATER_OR_EQUAL
                             .alphaReferenceValue(128)
-                            .useDrawCallAlphaState(true)
+                            .useDrawCallAlphaState(false)
                             .build();
                     MaterialInfo cutoutInfo = MaterialInfo.builder()
                             .hash(0x4D41_545F_4355_544FL) // "MAT_CUTO"
@@ -500,6 +505,16 @@ public final class ForgeRemixRenderer {
         }
         entityPass.captureAndSubmit(entity, client.getEntityRenderDispatcher(), tickDelta, entitySubmitter);
         return true;
+    }
+
+    public boolean renderBlockEntityInPlace(net.minecraft.world.level.block.entity.BlockEntity be, float tickDelta) {
+        if (!isRtxEnabled() || blockEntityPass == null || entitySubmitter == null) {
+            return false;
+        }
+        if (client == null || client.getBlockEntityRenderDispatcher() == null) {
+            return false;
+        }
+        return blockEntityPass.capture(be, client.getBlockEntityRenderDispatcher(), tickDelta, entitySubmitter);
     }
 
     public void submitScene() {

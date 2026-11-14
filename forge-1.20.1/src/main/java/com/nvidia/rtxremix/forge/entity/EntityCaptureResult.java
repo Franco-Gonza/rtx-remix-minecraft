@@ -13,7 +13,7 @@ import java.util.List;
  * Result of capturing an entity's rendered model for RTX Remix submission.
  */
 public record EntityCaptureResult(
-        Entity entity,
+        Object entity,
         Vec3 worldPos,
         float yaw,
         List<RemixVertexConsumerProvider.CapturedLayer> layers,
