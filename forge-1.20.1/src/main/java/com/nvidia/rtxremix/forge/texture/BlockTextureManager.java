@@ -95,7 +95,7 @@ public class BlockTextureManager {
                 transparent = path.contains("leaves") || path.contains("sapling")
                         || path.contains("glass") || path.contains("water") || path.contains("door")
                         || path.contains("grass") || path.contains("flower")
-                        || path.contains("torch")
+                        || path.contains("torch") || path.contains("cactus")
                         || path.contains("plant") || path.contains("stem")
                         || path.contains("crop") || path.contains("rail")
                         || path.contains("chain") || path.contains("lantern")
@@ -104,7 +104,10 @@ public class BlockTextureManager {
                         || path.contains("sugar_cane") || path.contains("fern")
                         || path.contains("mushroom") || path.contains("lily_pad")
                         || path.contains("nether_wart") || path.contains("coral")
-                        || path.contains("scaffolding") || path.contains("campfire");
+                        || path.contains("scaffolding") || path.contains("campfire")
+                        || path.contains("amethyst") || path.contains("dripstone")
+                        || path.contains("trapdoor") || path.contains("bars")
+                        || path.contains("seagrass") || path.contains("kelp");
             }
             boolean sss = path.contains("leaves") || path.contains("plant") || path.contains("foliage");
             return new SpriteEntry(loc, transparent, sss);

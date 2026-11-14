@@ -322,11 +322,7 @@ public final class DirectQuadWriter {
             } else if (layerType == solidType) {
                 stageCategory[i] = SectionMeshData.CAT_SOLID;
             } else if (layerType == BlockTextureManager.L_CUTOUT || layerType == BlockTextureManager.L_CUTOUT_MIPPED) {
-                if (sprite != null && !sprite.hasTransparency()) {
-                    stageCategory[i] = SectionMeshData.CAT_SOLID;
-                } else {
-                    stageCategory[i] = SectionMeshData.CAT_CUTOUT;
-                }
+                stageCategory[i] = SectionMeshData.CAT_CUTOUT;
             } else {
                 stageCategory[i] = SectionMeshData.CAT_SOLID;
             }

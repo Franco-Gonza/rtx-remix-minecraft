@@ -54,7 +54,7 @@ public class RemixEntityPass {
             return false;
         }
 
-        boolean prevShadow = dispatcher.shouldRenderHitBoxes(); // proxy for render shadow check
+        boolean prevShadow = ((com.nvidia.rtxremix.forge.mixin.EntityRenderDispatcherAccessor) dispatcher).rtxremix$getRenderShadow();
         dispatcher.setRenderShadow(false);
 
         EntityCaptureResult result;
@@ -64,7 +64,7 @@ public class RemixEntityPass {
             LOGGER.error("Error capturing entity {}: {}", entity.getType(), e.getMessage());
             return true;
         } finally {
-            dispatcher.setRenderShadow(true);
+            dispatcher.setRenderShadow(prevShadow);
         }
 
         if (result != null) {

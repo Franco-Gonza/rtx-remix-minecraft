@@ -941,6 +941,13 @@ public final class ForgeRemixRenderer {
             client.execute(() -> unloadChunkColumn(cx, cz));
             return;
         }
+        if (client != null && client.level != null) {
+            // Safety check: do not unload if the chunk is still resident in the client world!
+            if (client.level.getChunkSource().getChunk(cx, cz, false) != null) {
+                return;
+            }
+        }
+        com.nvidia.rtxremix.forge.terrain.capture.BlockDataQueue.markChunkUnloaded(cx, cz);
         int minY = -8;
         int maxY = 24;
         if (client != null && client.level != null) {

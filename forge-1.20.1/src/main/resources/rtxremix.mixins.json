@@ -13,6 +13,7 @@
         "ChunkRenderDispatcherRebuildTaskMixin",
         "LevelRendererMixin",
         "LevelRendererAccessor",
+        "EntityRenderDispatcherAccessor",
         "NativeImageAccessor",
         "SpriteAtlasTextureMixin",
         "SpriteContentsUploadMixin",
