@@ -386,6 +386,10 @@ public final class RemixParticleRenderer {
 
     public void destroy(RemixAPI api) {
         if (api != null) {
+            if (!activeMeshes.isEmpty()) {
+                retiredMeshes.addAll(activeMeshes);
+                activeMeshes.clear();
+            }
             cleanupRetiredMeshes(api);
             for (Long m : retiredMeshes) {
                 if (m != null && m != 0) {
