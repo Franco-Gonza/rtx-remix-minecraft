@@ -17,4 +17,7 @@ public interface LevelRendererAccessor {
 
     @Invoker("renderSnowAndRain")
     void rtxremix$renderSnowAndRain(LightTexture lightTexture, float partialTick, double camX, double camY, double camZ);
+
+    @Invoker("renderClouds")
+    void rtxremix$renderClouds(com.mojang.blaze3d.vertex.PoseStack poseStack, org.joml.Matrix4f projectionMatrix, float partialTick, double camX, double camY, double camZ);
 }

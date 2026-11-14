@@ -56,6 +56,7 @@ public final class ForgeRemixRenderer {
     private boolean submitFrameCalled = false;
     private long frameIndex = 0;
     private static volatile boolean renderingPostWeather = false;
+    private static volatile boolean renderingPostClouds = false;
     private final java.util.concurrent.atomic.AtomicBoolean destroyed = new java.util.concurrent.atomic.AtomicBoolean(false);
 
     private ForgeRemixRenderer() {}
@@ -74,6 +75,14 @@ public final class ForgeRemixRenderer {
 
     public static void setRenderingPostWeather(boolean value) {
         renderingPostWeather = value;
+    }
+
+    public static boolean isRenderingPostClouds() {
+        return renderingPostClouds;
+    }
+
+    public static void setRenderingPostClouds(boolean value) {
+        renderingPostClouds = value;
     }
 
     public com.nvidia.rtxremix.forge.sky.SkyRenderer getSkyRenderer() {
@@ -869,6 +878,27 @@ public final class ForgeRemixRenderer {
                     int remixTexture = interop.getTexture();
                     if (remixTexture > 0 && overlay != null) {
                         overlay.render(remixTexture);
+
+                        // Draw clouds on top of the raytraced scene overlay
+                        if (client.level != null && client.levelRenderer != null && client.gameRenderer != null) {
+                            try {
+                                Camera camera = client.gameRenderer.getMainCamera();
+                                if (camera != null) {
+                                    Vec3 camPos = camera.getPosition();
+                                    renderingPostClouds = true;
+                                    com.mojang.blaze3d.vertex.PoseStack cloudPoseStack = new com.mojang.blaze3d.vertex.PoseStack();
+                                    float fov = (float) ((com.nvidia.rtxremix.forge.mixin.GameRendererAccessor) client.gameRenderer)
+                                            .rtxremix$invokeGetFov(camera, lastPartialTicks, true);
+                                    org.joml.Matrix4f projMatrix = client.gameRenderer.getProjectionMatrix(fov);
+                                    ((com.nvidia.rtxremix.forge.mixin.LevelRendererAccessor) client.levelRenderer)
+                                            .rtxremix$renderClouds(cloudPoseStack, projMatrix, lastPartialTicks, camPos.x, camPos.y, camPos.z);
+                                }
+                            } catch (Exception e) {
+                                LOGGER.debug("Post-overlay cloud draw skipped: {}", e.getMessage());
+                            } finally {
+                                renderingPostClouds = false;
+                            }
+                        }
 
                         // Draw rain and snow on top of the raytraced scene overlay
                         if (client.level != null && (client.level.isRaining() || client.level.isThundering())
