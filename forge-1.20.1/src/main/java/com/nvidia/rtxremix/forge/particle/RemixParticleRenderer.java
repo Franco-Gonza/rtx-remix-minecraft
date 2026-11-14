@@ -19,7 +19,6 @@ import com.nvidia.rtxremix.forge.mixin.ParticleAccessor;
 import com.nvidia.rtxremix.forge.mixin.ParticleEngineAccessor;
 import com.nvidia.rtxremix.forge.mixin.SingleQuadParticleAccessor;
 import com.nvidia.rtxremix.forge.mixin.TextureSheetParticleAccessor;
-import com.nvidia.rtxremix.forge.util.DirectBufferPool;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.particle.Particle;
@@ -273,25 +272,14 @@ public final class RemixParticleRenderer {
     }
 
     private void flushBatch(RemixAPI api, int count, long materialHandle, long pNext, int categoryFlags) {
-        int vBytes = count * VERTS_PER_PARTICLE * STRIDE;
-        int iBytes = count * INDICES_PER_PARTICLE * Integer.BYTES;
-
-        ByteBuffer vBuf = DirectBufferPool.acquire(vBytes);
-        ByteBuffer iBuf = DirectBufferPool.acquire(iBytes);
-
         try {
-            vertexBuffer.position(0).limit(vBytes);
-            vBuf.put(vertexBuffer);
-            vBuf.flip();
-
-            indexBuffer.position(0).limit(iBytes);
-            iBuf.put(indexBuffer);
-            iBuf.flip();
+            vertexBuffer.position(0);
+            indexBuffer.position(0);
 
             MeshInfoSurfaceTriangles surf = new MeshInfoSurfaceTriangles();
-            surf.vertexBuffer = vBuf;
+            surf.vertexBuffer = vertexBuffer;
             surf.vertexCount = count * VERTS_PER_PARTICLE;
-            surf.indexBuffer = iBuf;
+            surf.indexBuffer = indexBuffer;
             surf.indexCount = count * INDICES_PER_PARTICLE;
             surf.material = materialHandle;
             surf.flags = MeshInfoSurfaceTriangles.TEXCOORD_BOUNDS;
@@ -309,9 +297,6 @@ public final class RemixParticleRenderer {
             }
         } catch (Exception e) {
             LOGGER.debug("Failed drawing particle batch: {}", e.getMessage());
-        } finally {
-            DirectBufferPool.release(vBuf);
-            DirectBufferPool.release(iBuf);
         }
     }
 

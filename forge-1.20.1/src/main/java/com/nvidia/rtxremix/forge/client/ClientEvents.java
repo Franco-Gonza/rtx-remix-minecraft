@@ -107,6 +107,28 @@ public final class ClientEvents {
                         ForgeRemixRenderer.getInstance().toggleMenu();
                         return 1;
                     }))
+                .then(net.minecraft.commands.Commands.literal("on")
+                    .executes(ctx -> {
+                        ForgeRemixRenderer.getInstance().setActive(true);
+                        ctx.getSource().sendSuccess(() -> Component.literal("§a[RTX Remix] Enabled path tracing."), false);
+                        return 1;
+                    }))
+                .then(net.minecraft.commands.Commands.literal("off")
+                    .executes(ctx -> {
+                        ForgeRemixRenderer.getInstance().setActive(false);
+                        ctx.getSource().sendSuccess(() -> Component.literal("§c[RTX Remix] Disabled path tracing (Vanilla raster)."), false);
+                        return 1;
+                    }))
+                .then(net.minecraft.commands.Commands.literal("reload")
+                    .executes(ctx -> {
+                        ForgeRemixRenderer.getInstance().clearLevelState();
+                        ForgeRemixRenderer.getInstance().updateTerrainMaterialIfReady();
+                        if (Minecraft.getInstance().levelRenderer != null) {
+                            Minecraft.getInstance().levelRenderer.allChanged();
+                        }
+                        ctx.getSource().sendSuccess(() -> Component.literal("§e[RTX Remix] Reloaded scene, terrain atlas & chunks."), false);
+                        return 1;
+                    }))
         );
     }
 }

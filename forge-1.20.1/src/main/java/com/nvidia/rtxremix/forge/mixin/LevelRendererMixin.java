@@ -45,4 +45,23 @@ public abstract class LevelRendererMixin {
             }
         }
     }
+
+    @org.spongepowered.asm.mixin.injection.Redirect(
+            method = "renderLevel",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/particle/ParticleEngine;render(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource$BufferSource;Lnet/minecraft/client/renderer/LightTexture;Lnet/minecraft/client/Camera;F)V"
+            )
+    )
+    private void rtxremix$skipVanillaParticleDraw(
+            net.minecraft.client.particle.ParticleEngine particleManager,
+            com.mojang.blaze3d.vertex.PoseStack poseStack,
+            net.minecraft.client.renderer.MultiBufferSource.BufferSource bufferSource,
+            net.minecraft.client.renderer.LightTexture lightTexture,
+            net.minecraft.client.Camera camera,
+            float tickDelta) {
+        if (!ForgeRemixRenderer.isRtxEnabled() || !ForgeRemixRenderer.getInstance().hasTerrainMeshes()) {
+            particleManager.render(poseStack, bufferSource, lightTexture, camera, tickDelta);
+        }
+    }
 }

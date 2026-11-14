@@ -184,7 +184,17 @@ public final class ForgeRemixRenderer {
     }
 
     public void setActive(boolean active) {
+        if (this.active == active) return;
         this.active = active;
+        if (!active) {
+            clearLevelState();
+        } else {
+            updateTerrainMaterialIfReady();
+        }
+        if (client != null && client.levelRenderer != null) {
+            client.levelRenderer.allChanged();
+            LOGGER.info("RTX Remix active state toggled to {}. Rebuilt all chunks.", active);
+        }
     }
 
     private final java.util.Map<SectionPos, java.util.List<Long>> sectionInstances = new java.util.concurrent.ConcurrentHashMap<>();
