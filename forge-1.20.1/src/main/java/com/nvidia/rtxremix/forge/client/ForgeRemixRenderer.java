@@ -172,6 +172,25 @@ public final class ForgeRemixRenderer {
         }
     }
 
+    private final byte[] resolvedVisibilityBuffer = new byte[8];
+
+    public void followRemixMenuVisibility() {
+        if (!isRtxEnabled()) return;
+        try {
+            int size = api.getConfigVariableResolved("rtx.showUI", resolvedVisibilityBuffer);
+            if (size > 0) {
+                boolean shown = resolvedVisibilityBuffer[0] != '0' && resolvedVisibilityBuffer[0] != 0;
+                if (shown != menuOpen) {
+                    menuOpen = shown;
+                    LOGGER.info("Remix menu visibility followed runtime state: {}", menuOpen ? "OPEN" : "CLOSED");
+                    if (!shown && client != null && client.screen == null && client.mouseHandler != null) {
+                        client.mouseHandler.grabMouse();
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
     public void toggleMenu() {
         if (!isRtxEnabled()) {
             LOGGER.warn("Cannot toggle RTX Remix menu: renderer not initialized or not active.");
@@ -181,6 +200,11 @@ public final class ForgeRemixRenderer {
         try {
             api.setConfigVariable("rtx.showUI", menuOpen ? "2" : "0");
             LOGGER.info("RTX Remix menu toggled: {}", menuOpen ? "OPEN (Developer)" : "CLOSED");
+            if (menuOpen && client != null && client.mouseHandler != null) {
+                client.mouseHandler.releaseMouse();
+            } else if (!menuOpen && client != null && client.screen == null && client.mouseHandler != null) {
+                client.mouseHandler.grabMouse();
+            }
         } catch (Exception e) {
             LOGGER.warn("Failed to set rtx.showUI config variable", e);
         }
@@ -226,6 +250,8 @@ public final class ForgeRemixRenderer {
 
     public void beginFrame(Camera camera, float partialTicks) {
         if (!isInitialized() || !active) return;
+
+        followRemixMenuVisibility();
 
         this.lastPartialTicks = partialTicks;
         submitFrameCalled = false;

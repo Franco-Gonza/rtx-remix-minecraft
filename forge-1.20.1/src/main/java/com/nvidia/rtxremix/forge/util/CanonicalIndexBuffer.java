@@ -66,7 +66,13 @@ public final class CanonicalIndexBuffer {
      */
     public static ByteBuffer getBuffer(int indexCount) {
         if (indexCount <= 0) {
-            return MemoryUtil.memAlloc(0).order(ByteOrder.nativeOrder());
+            if (sharedBuffer != null) {
+                ByteBuffer dup = sharedBuffer.duplicate().order(ByteOrder.nativeOrder());
+                dup.position(0);
+                dup.limit(0);
+                return dup;
+            }
+            return ByteBuffer.allocateDirect(0).order(ByteOrder.nativeOrder());
         }
 
         int quads = (indexCount + INDICES_PER_QUAD - 1) / INDICES_PER_QUAD;

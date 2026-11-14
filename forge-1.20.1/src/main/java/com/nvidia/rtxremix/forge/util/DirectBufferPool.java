@@ -59,7 +59,7 @@ public final class DirectBufferPool {
     private DirectBufferPool() {}
 
     public static ByteBuffer acquire(int minCapacity) {
-        if (minCapacity <= 0) return MemoryUtil.memAlloc(0).order(ByteOrder.nativeOrder());
+        if (minCapacity <= 0) return ByteBuffer.allocateDirect(0).order(ByteOrder.nativeOrder());
 
         int order = 32 - Integer.numberOfLeadingZeros(minCapacity - 1);
         order = Math.max(order, MIN_ORDER);
@@ -89,7 +89,7 @@ public final class DirectBufferPool {
     }
 
     public static void release(ByteBuffer buf) {
-        if (buf == null || !buf.isDirect()) return;
+        if (buf == null || !buf.isDirect() || buf.capacity() == 0) return;
 
         long addr = MemoryUtil.memAddress(buf);
         Boolean state = owned.put(addr, IDLE);
