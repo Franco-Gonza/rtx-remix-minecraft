@@ -604,10 +604,14 @@ public final class ForgeRemixRenderer {
 
                             long matHandle;
                             int doubleSided = 1;
+                            int categoryFlags = 0;
                             if ("water".equals(surface.bucketKey())) {
                                 matHandle = waterMaterial != 0 ? waterMaterial : defaultTerrainMaterial;
-                            } else if (surface.category() == SectionMeshData.CAT_CUTOUT) {
+                            } else if (surface.category() == SectionMeshData.CAT_CUTOUT || surface.category() == SectionMeshData.CAT_OVERLAY) {
                                 matHandle = cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial;
+                                if (surface.category() == SectionMeshData.CAT_OVERLAY) {
+                                    categoryFlags = InstanceCategoryBit.DECAL_STATIC;
+                                }
                             } else if (surface.category() == SectionMeshData.CAT_TRANSLUCENT) {
                                 matHandle = translucentTerrainMaterial != 0 ? translucentTerrainMaterial : defaultTerrainMaterial;
                             } else {
@@ -631,7 +635,7 @@ public final class ForgeRemixRenderer {
                             long mHandle = api.createMesh(mi);
                             if (mHandle != 0) {
                                 newMeshes.add(mHandle);
-                                long instHandle = api.sceneInstanceAdd(mHandle, sectionTransform.matrix, 0, doubleSided, 0);
+                                long instHandle = api.sceneInstanceAdd(mHandle, sectionTransform.matrix, categoryFlags, doubleSided, 0);
                                 if (instHandle != 0) {
                                     newInstances.add(instHandle);
                                 }
