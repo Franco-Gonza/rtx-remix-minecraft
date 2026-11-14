@@ -349,6 +349,39 @@ public class RemixEntitySubmitter {
                 if (tex instanceof net.minecraft.client.renderer.texture.DynamicTexture dt) {
                     image = dt.getPixels();
                     ownsImage = false;
+                } else if (tex != null && tex.getId() > 0) {
+                    // Extract GPU texture via OpenGL for TextureAtlas (chests, beds, shulkers, signs, banners), HttpTexture, etc.
+                    int prevTex = org.lwjgl.opengl.GL11.glGetInteger(org.lwjgl.opengl.GL11.GL_TEXTURE_BINDING_2D);
+                    org.lwjgl.opengl.GL11.glBindTexture(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, tex.getId());
+                    try {
+                        int w = org.lwjgl.opengl.GL11.glGetTexLevelParameteri(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, 0, org.lwjgl.opengl.GL11.GL_TEXTURE_WIDTH);
+                        int h = org.lwjgl.opengl.GL11.glGetTexLevelParameteri(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, 0, org.lwjgl.opengl.GL11.GL_TEXTURE_HEIGHT);
+                        if (w > 0 && h > 0) {
+                            ByteBuffer buf = MemoryUtil.memAlloc(w * h * 4);
+                            try {
+                                buf.clear();
+                                org.lwjgl.opengl.GL11.glGetTexImage(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, 0,
+                                        org.lwjgl.opengl.GL11.GL_RGBA, org.lwjgl.opengl.GL11.GL_UNSIGNED_BYTE, buf);
+                                buf.position(0);
+                                buf.limit(w * h * 4);
+                                long texHash = ((long) textureId.hashCode() << 32) ^ ((long) w * 31L + h) ^ 0x55AA55AA55AA55AAL;
+                                if (texHash == 0) texHash = 1L;
+                                TextureFromMemoryInfo texInfo = TextureFromMemoryInfo.builder()
+                                        .hash(texHash)
+                                        .size(w, h)
+                                        .format(TextureFormat.RGBA8_UNORM)
+                                        .pixelData(buf)
+                                        .build();
+                                long handle = api.createTextureFromMemory(texInfo);
+                                textureCache.put(textureId, handle);
+                                return handle;
+                            } finally {
+                                MemoryUtil.memFree(buf);
+                            }
+                        }
+                    } finally {
+                        org.lwjgl.opengl.GL11.glBindTexture(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, prevTex);
+                    }
                 }
             }
 
