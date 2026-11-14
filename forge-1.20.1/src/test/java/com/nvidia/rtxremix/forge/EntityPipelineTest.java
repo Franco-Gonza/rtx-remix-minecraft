@@ -97,4 +97,27 @@ public class EntityPipelineTest {
         assertEquals(1.0f, consumer.getNormalsY()[0], 1.0E-4f);
         assertEquals(0.0f, consumer.getNormalsZ()[0], 1.0E-4f);
     }
+
+    @Test
+    void testTerrainInstanceBlendConfigurations() {
+        com.nvidia.rtxremix.InstanceInfoBlendEXT solid = com.nvidia.rtxremix.InstanceInfoBlendEXT.textureTimesVertexColor();
+        assertNotNull(solid);
+        assertEquals(0, solid.alphaTestEnabled);
+        assertEquals(0, solid.alphaBlendEnabled);
+        assertEquals(com.nvidia.rtxremix.InstanceInfoBlendEXT.RT_TEX_OP_MODULATE, solid.textureColorOperation);
+
+        com.nvidia.rtxremix.InstanceInfoBlendEXT cutout = com.nvidia.rtxremix.InstanceInfoBlendEXT.textureTimesVertexColorAlphaTest(128);
+        assertNotNull(cutout);
+        assertEquals(1, cutout.alphaTestEnabled);
+        assertEquals((byte) 128, cutout.alphaTestReferenceValue);
+        assertEquals(0, cutout.alphaBlendEnabled);
+
+        com.nvidia.rtxremix.InstanceInfoBlendEXT overlay = com.nvidia.rtxremix.InstanceInfoBlendEXT.textureTimesVertexColorAlphaBlend(1);
+        assertNotNull(overlay);
+        assertEquals(1, overlay.alphaBlendEnabled);
+        assertEquals(1, overlay.alphaTestEnabled);
+
+        assertEquals(1 << 0, com.nvidia.rtxremix.MeshInfoSurfaceTriangles.TEXCOORD_BOUNDS);
+        assertNotEquals(0, com.nvidia.rtxremix.InstanceCategoryBit.DECAL_STATIC);
+    }
 }
