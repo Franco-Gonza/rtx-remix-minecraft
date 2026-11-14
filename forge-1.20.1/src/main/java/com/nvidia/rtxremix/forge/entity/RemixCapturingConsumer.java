@@ -146,9 +146,12 @@ public class RemixCapturingConsumer implements VertexConsumer {
         if (ctx.isActive()) {
             this.curBoneIndex = ctx.pushBone(matrix);
         }
-        this.curX = x;
-        this.curY = y;
-        this.curZ = z;
+        float tx = matrix.m00() * x + matrix.m10() * y + matrix.m20() * z + matrix.m30();
+        float ty = matrix.m01() * x + matrix.m11() * y + matrix.m21() * z + matrix.m31();
+        float tz = matrix.m02() * x + matrix.m12() * y + matrix.m22() * z + matrix.m32();
+        this.curX = tx;
+        this.curY = ty;
+        this.curZ = tz;
         this.vertexOpen = true;
         return this;
     }
@@ -187,9 +190,19 @@ public class RemixCapturingConsumer implements VertexConsumer {
 
     @Override
     public VertexConsumer normal(Matrix3f normalMatrix, float x, float y, float z) {
-        this.curNx = x;
-        this.curNy = y;
-        this.curNz = z;
+        float tnx = normalMatrix.m00() * x + normalMatrix.m10() * y + normalMatrix.m20() * z;
+        float tny = normalMatrix.m01() * x + normalMatrix.m11() * y + normalMatrix.m21() * z;
+        float tnz = normalMatrix.m02() * x + normalMatrix.m12() * y + normalMatrix.m22() * z;
+        float lenSq = tnx * tnx + tny * tny + tnz * tnz;
+        if (lenSq > 1.0E-6f) {
+            float inv = (float) (1.0 / Math.sqrt(lenSq));
+            tnx *= inv;
+            tny *= inv;
+            tnz *= inv;
+        }
+        this.curNx = tnx;
+        this.curNy = tny;
+        this.curNz = tnz;
         return this;
     }
 

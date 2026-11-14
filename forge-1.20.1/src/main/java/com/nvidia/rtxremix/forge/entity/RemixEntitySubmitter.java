@@ -200,9 +200,9 @@ public class RemixEntitySubmitter {
 
         try {
             if (existingInstance != null) {
-                api.sceneInstanceUpdate(existingInstance, meshHandle, worldTransform.matrix, categoryFlags, 0, 0);
+                api.sceneInstanceUpdate(existingInstance, meshHandle, worldTransform.matrix, categoryFlags, 1, 0);
             } else {
-                long instanceHandle = api.sceneInstanceAdd(meshHandle, worldTransform.matrix, categoryFlags, 0, 0);
+                long instanceHandle = api.sceneInstanceAdd(meshHandle, worldTransform.matrix, categoryFlags, 1, 0);
                 retainedInstances.put(partKey, instanceHandle);
                 instancesByEntity.computeIfAbsent(result.entity(), k -> new ArrayList<>()).add(partKey);
             }
@@ -278,9 +278,9 @@ public class RemixEntitySubmitter {
                     .albedoConstant(1.0f, 1.0f, 1.0f)
                     .roughnessConstant(0.8f)
                     .metallicConstant(0.0f)
-                    .alphaTestType(4) // GREATER_OR_EQUAL
+                    .alphaTestType(6) // GREATER_OR_EQUAL
                     .alphaReferenceValue(128)
-                    .useDrawCallAlphaState(true)
+                    .useDrawCallAlphaState(false)
                     .build();
             info.opaqueExt = opaque;
         } else if (surfaceMode == RenderLayerUtils.SurfaceMode.EMISSIVE) {
@@ -290,6 +290,7 @@ public class RemixEntitySubmitter {
                     .metallicConstant(0.0f)
                     .blendEnabled(true)
                     .blendType(MaterialInfoOpaqueEXT.BLEND_TYPE_ALPHA_EMISSIVE)
+                    .useDrawCallAlphaState(false)
                     .build();
             info.opaqueExt = opaque;
             info.emissiveTexture = textureHandle;
@@ -308,7 +309,7 @@ public class RemixEntitySubmitter {
                     .albedoConstant(1.0f, 1.0f, 1.0f)
                     .roughnessConstant(0.8f)
                     .metallicConstant(0.0f)
-                    .useDrawCallAlphaState(true)
+                    .useDrawCallAlphaState(false)
                     .build();
             info.opaqueExt = opaque;
         }

@@ -73,4 +73,28 @@ public class EntityPipelineTest {
         assertNotNull(com.nvidia.rtxremix.forge.light.LightShape.valueOf("RECT"));
         assertNotNull(com.nvidia.rtxremix.forge.light.LightShape.valueOf("DISK"));
     }
+
+    @Test
+    void testCapturingConsumerTransform() {
+        com.nvidia.rtxremix.forge.entity.RemixCapturingConsumer consumer =
+                new com.nvidia.rtxremix.forge.entity.RemixCapturingConsumer();
+        consumer.reset(new net.minecraft.resources.ResourceLocation("test", "tex"), "solid");
+
+        Matrix4f pose = new Matrix4f().identity().translate(10.0f, 20.0f, 30.0f);
+        org.joml.Matrix3f norm = new org.joml.Matrix3f().identity();
+
+        consumer.vertex(pose, 1.0f, 2.0f, 3.0f);
+        consumer.normal(norm, 0.0f, 1.0f, 0.0f);
+        consumer.uv(0.5f, 0.5f);
+        consumer.color(255, 255, 255, 255);
+        consumer.endVertex();
+
+        assertEquals(1, consumer.getVertexCount());
+        assertEquals(11.0f, consumer.getPositionsX()[0], 1.0E-4f);
+        assertEquals(22.0f, consumer.getPositionsY()[0], 1.0E-4f);
+        assertEquals(33.0f, consumer.getPositionsZ()[0], 1.0E-4f);
+        assertEquals(0.0f, consumer.getNormalsX()[0], 1.0E-4f);
+        assertEquals(1.0f, consumer.getNormalsY()[0], 1.0E-4f);
+        assertEquals(0.0f, consumer.getNormalsZ()[0], 1.0E-4f);
+    }
 }
