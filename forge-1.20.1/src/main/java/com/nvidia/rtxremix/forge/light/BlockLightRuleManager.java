@@ -63,7 +63,7 @@ public final class BlockLightRuleManager {
             x = 0.5f; y = 0.7f; z = 0.5f;
             radius = TORCH_RADIUS;
             colorR = 1.0f; colorG = 0.35f; colorB = 0.1f;
-            intensityScale = TORCH_AUTHORED_INTENSITY_MULTIPLIER * THIN_SPHERE_INTENSITY_SCALE;
+            intensityScale = THIN_SPHERE_INTENSITY_SCALE;
         } else if (state.is(Blocks.WALL_TORCH)) {
             ruleName = "wall_torch";
             Direction facing = state.getValue(WallTorchBlock.FACING).getOpposite();
@@ -72,13 +72,13 @@ public final class BlockLightRuleManager {
             z = 0.5f + 0.27f * facing.getStepZ();
             radius = TORCH_RADIUS;
             colorR = 1.0f; colorG = 0.35f; colorB = 0.1f;
-            intensityScale = TORCH_AUTHORED_INTENSITY_MULTIPLIER * THIN_SPHERE_INTENSITY_SCALE;
+            intensityScale = THIN_SPHERE_INTENSITY_SCALE;
         } else if (state.is(Blocks.SOUL_TORCH)) {
             ruleName = "soul_torch";
             x = 0.5f; y = 0.7f; z = 0.5f;
             radius = TORCH_RADIUS;
             colorR = 0.05f; colorG = 0.2f; colorB = 1.0f;
-            intensityScale = TORCH_AUTHORED_INTENSITY_MULTIPLIER * THIN_SPHERE_INTENSITY_SCALE;
+            intensityScale = THIN_SPHERE_INTENSITY_SCALE;
         } else if (state.is(Blocks.SOUL_WALL_TORCH)) {
             ruleName = "soul_wall_torch";
             Direction facing = state.getValue(WallTorchBlock.FACING).getOpposite();
@@ -87,13 +87,13 @@ public final class BlockLightRuleManager {
             z = 0.5f + 0.27f * facing.getStepZ();
             radius = TORCH_RADIUS;
             colorR = 0.05f; colorG = 0.2f; colorB = 1.0f;
-            intensityScale = TORCH_AUTHORED_INTENSITY_MULTIPLIER * THIN_SPHERE_INTENSITY_SCALE;
+            intensityScale = THIN_SPHERE_INTENSITY_SCALE;
         } else if (state.is(Blocks.REDSTONE_TORCH)) {
             ruleName = "redstone_torch";
             x = 0.5f; y = 0.7f; z = 0.5f;
             radius = 0.07f;
             colorR = 1.0f; colorG = 0.15f; colorB = 0.02f;
-            intensityScale = TORCH_AUTHORED_INTENSITY_MULTIPLIER * THIN_SPHERE_INTENSITY_SCALE;
+            intensityScale = THIN_SPHERE_INTENSITY_SCALE;
         } else if (state.is(Blocks.REDSTONE_WALL_TORCH)) {
             ruleName = "redstone_wall_torch";
             Direction facing = state.getValue(RedstoneWallTorchBlock.FACING).getOpposite();
@@ -102,39 +102,39 @@ public final class BlockLightRuleManager {
             z = 0.5f + 0.27f * facing.getStepZ();
             radius = 0.07f;
             colorR = 1.0f; colorG = 0.15f; colorB = 0.02f;
-            intensityScale = TORCH_AUTHORED_INTENSITY_MULTIPLIER * THIN_SPHERE_INTENSITY_SCALE;
+            intensityScale = THIN_SPHERE_INTENSITY_SCALE;
         } else if (state.is(Blocks.CAMPFIRE)) {
             ruleName = "campfire";
             x = 0.5f; y = 0.55f; z = 0.5f;
             radius = 0.25f;
             colorR = 1.0f; colorG = 0.15f; colorB = 0.05f;
-            intensityScale = 22.5f;
+            intensityScale = 1.5f;
         } else if (state.is(Blocks.SOUL_CAMPFIRE)) {
             ruleName = "soul_campfire";
             x = 0.5f; y = 0.55f; z = 0.5f;
             radius = 0.25f;
             colorR = 0.05f; colorG = 0.2f; colorB = 1.0f;
-            intensityScale = 22.5f;
+            intensityScale = 1.5f;
         } else if (state.is(Blocks.LANTERN)) {
             ruleName = "lantern";
             boolean hanging = state.hasProperty(LanternBlock.HANGING) && state.getValue(LanternBlock.HANGING);
             x = 0.5f; y = hanging ? 0.35f : 0.25f; z = 0.5f;
             radius = 0.10f;
             colorR = 1.0f; colorG = 0.75f; colorB = 0.4f;
-            intensityScale = 15.0f;
+            intensityScale = 1.0f;
         } else if (state.is(Blocks.SOUL_LANTERN)) {
             ruleName = "soul_lantern";
             boolean hanging = state.hasProperty(LanternBlock.HANGING) && state.getValue(LanternBlock.HANGING);
             x = 0.5f; y = hanging ? 0.35f : 0.25f; z = 0.5f;
             radius = 0.10f;
             colorR = 0.05f; colorG = 0.2f; colorB = 1.0f;
-            intensityScale = 15.0f;
+            intensityScale = 1.0f;
         } else if (state.is(Blocks.END_ROD)) {
             ruleName = "end_rod";
             x = 0.5f; y = 0.5f; z = 0.5f;
             radius = 0.08f;
             colorR = 0.95f; colorG = 0.95f; colorB = 1.0f;
-            intensityScale = 15.0f;
+            intensityScale = 1.0f;
         } else {
             return Collections.emptyList();
         }
@@ -158,7 +158,7 @@ public final class BlockLightRuleManager {
                 0, 0, 1, 0,
                 0, 0, 0,
                 false, 0, 0, 0, 0, 0, 0,
-                1.0f, 1.0f
+                0.5f, 1.0f
         ));
         return list;
     }

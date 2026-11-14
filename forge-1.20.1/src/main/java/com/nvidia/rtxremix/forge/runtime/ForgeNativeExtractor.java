@@ -61,31 +61,9 @@ public final class ForgeNativeExtractor {
     public static void cleanStaleSentryFiles(Path gameDir) {
         try {
             Path sentryDir = gameDir.resolve("rtx-remix").resolve("logs").resolve(".sentry-native");
-            if (Files.isDirectory(sentryDir)) {
-                try (var stream = Files.newDirectoryStream(sentryDir)) {
-                    for (Path entry : stream) {
-                        String name = entry.getFileName().toString();
-                        if (name.endsWith(".run") || name.endsWith(".dmp") || name.endsWith(".envelope")) {
-                            deleteRecursively(entry);
-                        }
-                    }
-                }
-                Path reports = sentryDir.resolve("reports");
-                if (Files.isDirectory(reports)) {
-                    try (var stream = Files.newDirectoryStream(reports)) {
-                        for (Path entry : stream) {
-                            deleteRecursively(entry);
-                        }
-                    }
-                }
-                Path cache = sentryDir.resolve("cache");
-                if (Files.isDirectory(cache)) {
-                    try (var stream = Files.newDirectoryStream(cache)) {
-                        for (Path entry : stream) {
-                            deleteRecursively(entry);
-                        }
-                    }
-                }
+            if (Files.exists(sentryDir)) {
+                deleteRecursively(sentryDir);
+                LOGGER.info("Purged stale Sentry crash telemetry database: {}", sentryDir);
             }
         } catch (Throwable t) {
             LOGGER.debug("Could not clean stale sentry files: {}", t.getMessage());

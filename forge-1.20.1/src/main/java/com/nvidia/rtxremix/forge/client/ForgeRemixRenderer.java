@@ -43,6 +43,8 @@ public final class ForgeRemixRenderer {
     private long solidTerrainMaterial = 0;
     private long cutoutTerrainMaterial = 0;
     private long waterMaterial = 0;
+    private long waterCameraMediumMaterial = 0;
+    private long lastCameraMediumHandle = 0;
     private long translucentTerrainMaterial = 0;
     private long waterNormalTexture = 0;
     private long waterWhiteTexture = 0;
@@ -233,11 +235,23 @@ public final class ForgeRemixRenderer {
         Vec3 pos = camera.getPosition();
         updateCamera(camera, partialTicks);
 
+        boolean isUnderwater = false;
         if (client.level != null) {
             skyRenderer.render(api, client.level, pos, partialTicks);
             heldLightManager.update(api, client.level, camera, partialTicks);
-            boolean isUnderwater = camera.getFluidInCamera() == net.minecraft.world.level.material.FogType.WATER;
+            isUnderwater = camera.getFluidInCamera() == net.minecraft.world.level.material.FogType.WATER;
             confLayerDriver.update(client.level, pos, isUnderwater, 1.0f / 60.0f);
+        }
+
+        long targetMedium = (isUnderwater && waterCameraMediumMaterial != 0) ? waterCameraMediumMaterial : 0;
+        if (targetMedium != lastCameraMediumHandle) {
+            try {
+                api.setCameraMediumMaterial(targetMedium);
+                lastCameraMediumHandle = targetMedium;
+                LOGGER.info("Camera medium updated: {}", isUnderwater ? "water" : "clear");
+            } catch (Exception e) {
+                LOGGER.warn("Failed updating camera medium material: {}", e.getMessage());
+            }
         }
 
         if (entityPass != null && entitySubmitter != null) {
@@ -362,6 +376,21 @@ public final class ForgeRemixRenderer {
                                 .spriteSheetFps(20);
                     }
                     waterMaterial = api.createMaterial(waterBuilder.build());
+
+                    // 3b. Underwater camera medium material (absorption & volume fog inside water)
+                    MaterialInfoTranslucentEXT mediumExt = MaterialInfoTranslucentEXT.builder()
+                            .refractiveIndex(1.33f)
+                            .transmittanceColor(0.98f, 0.98f, 0.98f)
+                            .transmittanceMeasurementDistance(1.0f)
+                            .useDiffuseLayer(false)
+                            .build();
+                    MaterialInfo mediumInfo = MaterialInfo.builder()
+                            .hash(0x5741_5445_525F_4D45L) // "WATER_ME"
+                            .albedoTexture(waterWhiteTexture)
+                            .filterMode(1)
+                            .translucentExt(mediumExt)
+                            .build();
+                    waterCameraMediumMaterial = api.createMaterial(mediumInfo);
 
                     // 4. Translucent terrain material (stained glass, ice)
                     MaterialInfoTranslucentEXT transExt = MaterialInfoTranslucentEXT.builder()
@@ -998,6 +1027,11 @@ public final class ForgeRemixRenderer {
             try { api.destroyMaterial(waterMaterial); } catch (Exception ignored) {}
             waterMaterial = 0;
         }
+        if (waterCameraMediumMaterial != 0) {
+            try { api.destroyMaterial(waterCameraMediumMaterial); } catch (Exception ignored) {}
+            waterCameraMediumMaterial = 0;
+        }
+        lastCameraMediumHandle = 0;
         if (translucentTerrainMaterial != 0) {
             try { api.destroyMaterial(translucentTerrainMaterial); } catch (Exception ignored) {}
             translucentTerrainMaterial = 0;
