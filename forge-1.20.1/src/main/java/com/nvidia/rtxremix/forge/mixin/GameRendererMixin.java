@@ -42,10 +42,18 @@ public abstract class GameRendererMixin {
         }
     }
 
+    @Inject(method = "renderItemInHand", at = @At("HEAD"))
+    private void rtxremix$onRenderItemInHandHead(PoseStack poseStack, Camera camera, float partialTicks, CallbackInfo ci) {
+        ForgeRemixRenderer renderer = ForgeRemixRenderer.getInstance();
+        if (renderer.isInitialized() && renderer.isActive()) {
+            renderer.submitScene();
+        }
+    }
+
     @Inject(method = "renderLevel", at = @At("TAIL"))
     private void rtxremix$onRenderLevelTail(float partialTicks, long finishTimeNano, PoseStack poseStack, CallbackInfo ci) {
         ForgeRemixRenderer renderer = ForgeRemixRenderer.getInstance();
-        if (renderer.isInitialized() && renderer.isActive()) {
+        if (renderer.isInitialized() && renderer.isActive() && !renderer.isSceneSubmitted()) {
             renderer.submitScene();
         }
     }

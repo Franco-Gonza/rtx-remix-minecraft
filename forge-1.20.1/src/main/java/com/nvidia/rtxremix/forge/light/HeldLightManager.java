@@ -196,8 +196,12 @@ public final class HeldLightManager {
                 .build();
 
         try {
+            Long oldHandle = activeLights.get(key);
             long handle = api.createLight(info);
             if (handle != 0) {
+                if (oldHandle != null && oldHandle != 0 && oldHandle != handle) {
+                    try { api.destroyLight(oldHandle); } catch (Exception ignored) {}
+                }
                 activeLights.put(key, handle);
                 api.drawLightInstance(handle);
             }
@@ -266,7 +270,28 @@ public final class HeldLightManager {
             return new LightColorEmission(14, 1.0f, 0.75f, 0.35f, false);
         }
 
-        // 7. General BlockItem light emission fallback (e.g. modded glowing blocks)
+        // 7. Lava buckets (liquid incandescent rock, intense warm orange, burns underwater)
+        if (path.contains("lava_bucket")) {
+            return new LightColorEmission(15, 1.0f, 0.50f, 0.10f, true);
+        }
+
+        // 8. Glow ink, glow berries and glowing sacs
+        if (path.contains("glow_ink") || path.contains("glow_berries") || path.contains("glow_item_frame")) {
+            return new LightColorEmission(9, 0.30f, 0.85f, 0.90f, true);
+        }
+
+        // 9. Alex's Caves radioactive and toxic glow
+        if (path.contains("uranium") || path.contains("radrock") || path.contains("fissile_core") || path.contains("nuclear")) {
+            return new LightColorEmission(14, 0.20f, 1.0f, 0.25f, true);
+        }
+        if (path.contains("bioluminescent_torch") || path.contains("pewen_sap")) {
+            return new LightColorEmission(14, 0.15f, 0.85f, 1.0f, true);
+        }
+        if (path.contains("acid_bucket") || path.contains("toxic_waste")) {
+            return new LightColorEmission(12, 0.45f, 1.0f, 0.15f, true);
+        }
+
+        // 10. General BlockItem light emission fallback (e.g. modded glowing blocks)
         if (stack.getItem() instanceof BlockItem bi) {
             Block block = bi.getBlock();
             int emission = block.defaultBlockState().getLightEmission();

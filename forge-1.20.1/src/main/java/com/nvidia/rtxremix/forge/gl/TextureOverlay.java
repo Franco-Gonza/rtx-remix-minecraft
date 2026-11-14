@@ -86,6 +86,7 @@ public class TextureOverlay {
         RenderSystem.setProjectionMatrix(savedProjection, VertexSorting.ORTHOGRAPHIC_Z);
         RenderSystem.depthMask(true);
         RenderSystem.enableDepthTest();
+        RenderSystem.clear(256, Minecraft.ON_OSX);
         RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
     }
 }

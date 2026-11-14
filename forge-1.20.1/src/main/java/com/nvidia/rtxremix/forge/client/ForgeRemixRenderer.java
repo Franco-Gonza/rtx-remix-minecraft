@@ -221,6 +221,7 @@ public final class ForgeRemixRenderer {
     public void beginFrame(Camera camera, float partialTicks) {
         if (!isInitialized() || !active) return;
 
+        submitFrameCalled = false;
         updateTerrainMaterialIfReady();
 
         frameIndex++;
@@ -838,6 +839,10 @@ public final class ForgeRemixRenderer {
         } finally {
             submitFrameCalled = false;
         }
+    }
+
+    public boolean isSceneSubmitted() {
+        return submitFrameCalled;
     }
 
     public void clearLevelState() {
