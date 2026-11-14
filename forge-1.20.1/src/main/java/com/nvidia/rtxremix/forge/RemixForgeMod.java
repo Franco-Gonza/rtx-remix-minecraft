@@ -53,13 +53,12 @@ public final class RemixForgeMod {
         // Register client gameplay and render hooks on the Forge Event Bus
         MinecraftForge.EVENT_BUS.register(ClientEvents.getInstance());
 
-        // Ensure graceful shutdown of native RTX Remix runtime on JVM exit
+        // Fallback safety shutdown hook for native Remix runtime on JVM exit
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try {
-                LOGGER.info("Shutdown hook triggered: disposing RTX Remix Renderer...");
-                com.nvidia.rtxremix.forge.client.ForgeRemixRenderer.getInstance().destroy();
+                com.nvidia.rtxremix.forge.client.ForgeRemixRenderer.getInstance().shutdownNativeRuntime();
             } catch (Throwable t) {
-                LOGGER.debug("Error during shutdown hook disposal: {}", t.getMessage());
+                LOGGER.debug("Error during shutdown hook: {}", t.getMessage());
             }
         }, "RTX-Remix-Shutdown"));
     }

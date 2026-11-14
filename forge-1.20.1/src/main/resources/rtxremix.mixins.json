@@ -6,6 +6,7 @@
     "refmap": "rtxremix.refmap.json",
     "mixins": [],
     "client": [
+        "MinecraftMixin",
         "RenderSystemMixin",
         "GameRendererMixin",
         "BlockEntityRenderDispatcherMixin",

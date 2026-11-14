@@ -49,6 +49,7 @@ public final class ForgeRemixRenderer {
     private long waterNormalTexture = 0;
     private long waterWhiteTexture = 0;
     private float lastPartialTicks = 0.0f;
+    private net.minecraft.client.multiplayer.ClientLevel lastLevel = null;
 
     private boolean initialized = false;
     private boolean active = false;
@@ -256,6 +257,14 @@ public final class ForgeRemixRenderer {
         this.lastPartialTicks = partialTicks;
         submitFrameCalled = false;
         updateTerrainMaterialIfReady();
+
+        if (client != null && client.level != lastLevel) {
+            if (lastLevel != null) {
+                LOGGER.info("ClientLevel changed (dimension change or reload): clearing RTX terrain and light state");
+                clearLevelState();
+            }
+            lastLevel = client != null ? client.level : null;
+        }
 
         frameIndex++;
         Vec3 pos = camera.getPosition();
@@ -1025,6 +1034,7 @@ public final class ForgeRemixRenderer {
         if (heldLightManager != null && api != null) {
             heldLightManager.clear(api);
         }
+        lastLevel = client != null ? client.level : null;
         if (particleRenderer != null && api != null) {
             particleRenderer.destroy(api);
         }
@@ -1051,51 +1061,64 @@ public final class ForgeRemixRenderer {
         if (confLayerDriver != null) {
             confLayerDriver.releaseAll();
         }
-        if (solidTerrainMaterial != 0) {
+        if (solidTerrainMaterial != 0 && api != null) {
             try { api.destroyMaterial(solidTerrainMaterial); } catch (Exception ignored) {}
             solidTerrainMaterial = 0;
         }
-        if (cutoutTerrainMaterial != 0) {
+        if (cutoutTerrainMaterial != 0 && api != null) {
             try { api.destroyMaterial(cutoutTerrainMaterial); } catch (Exception ignored) {}
             cutoutTerrainMaterial = 0;
         }
-        if (waterMaterial != 0) {
+        if (waterMaterial != 0 && api != null) {
             try { api.destroyMaterial(waterMaterial); } catch (Exception ignored) {}
             waterMaterial = 0;
         }
-        if (waterCameraMediumMaterial != 0) {
+        if (waterCameraMediumMaterial != 0 && api != null) {
             try { api.destroyMaterial(waterCameraMediumMaterial); } catch (Exception ignored) {}
             waterCameraMediumMaterial = 0;
         }
         lastCameraMediumHandle = 0;
-        if (translucentTerrainMaterial != 0) {
+        if (translucentTerrainMaterial != 0 && api != null) {
             try { api.destroyMaterial(translucentTerrainMaterial); } catch (Exception ignored) {}
             translucentTerrainMaterial = 0;
         }
-        if (waterNormalTexture != 0) {
+        if (waterNormalTexture != 0 && api != null) {
             try { api.destroyTexture(waterNormalTexture); } catch (Exception ignored) {}
             waterNormalTexture = 0;
         }
-        if (waterWhiteTexture != 0) {
+        if (waterWhiteTexture != 0 && api != null) {
             try { api.destroyTexture(waterWhiteTexture); } catch (Exception ignored) {}
             waterWhiteTexture = 0;
         }
-        if (terrainAtlasTexture != 0) {
+        if (terrainAtlasTexture != 0 && api != null) {
             try { api.destroyTexture(terrainAtlasTexture); } catch (Exception ignored) {}
             terrainAtlasTexture = 0;
         }
         defaultTerrainMaterial = 0;
         if (interop != null) {
-            interop.destroy();
+            try {
+                interop.destroy();
+            } catch (Exception e) {
+                LOGGER.warn("Failed to destroy GlInterop: {}", e.getMessage());
+            }
             interop = null;
         }
         com.nvidia.rtxremix.forge.util.CanonicalIndexBuffer.free();
-        if (api != null) {
-            api.shutdown();
-            api = null;
-        }
         active = false;
+        LOGGER.info("RTX Remix Renderer resources destroyed.");
+    }
+
+    public void shutdownNativeRuntime() {
+        destroy();
+        if (api != null) {
+            try {
+                api.shutdown();
+            } catch (Exception e) {
+                LOGGER.error("Error during Remix shutdown: {}", e.getMessage());
+            }
+            api = null;
+            LOGGER.info("RTX Remix native runtime shut down.");
+        }
         initialized = false;
-        LOGGER.info("RTX Remix Renderer destroyed.");
     }
 }

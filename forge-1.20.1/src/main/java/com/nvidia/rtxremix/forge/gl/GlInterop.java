@@ -193,15 +193,27 @@ public final class GlInterop {
     }
 
     public void destroy() {
-        colorImage.destroy();
-        depthImage.destroy();
-        if (vkDoneSemaphore != 0) {
-            glDeleteSemaphoresEXT(vkDoneSemaphore);
-            vkDoneSemaphore = 0;
-        }
-        if (clientDoneSemaphore != 0) {
-            glDeleteSemaphoresEXT(clientDoneSemaphore);
-            clientDoneSemaphore = 0;
+        try {
+            if (org.lwjgl.opengl.GL.getCapabilities() != null) {
+                colorImage.destroy();
+                depthImage.destroy();
+                if (vkDoneSemaphore != 0) {
+                    glDeleteSemaphoresEXT(vkDoneSemaphore);
+                    vkDoneSemaphore = 0;
+                }
+                if (clientDoneSemaphore != 0) {
+                    glDeleteSemaphoresEXT(clientDoneSemaphore);
+                    clientDoneSemaphore = 0;
+                }
+            } else {
+                LOGGER.warn("GlInterop: destroy called without active OpenGL context, resetting handles");
+                colorImage.destroy();
+                depthImage.destroy();
+                vkDoneSemaphore = 0;
+                clientDoneSemaphore = 0;
+            }
+        } catch (Throwable t) {
+            LOGGER.warn("GlInterop: exception during GL cleanup: {}", t.getMessage());
         }
         barrierTextures = new int[0];
         barrierLayouts = new int[0];
@@ -342,16 +354,28 @@ public final class GlInterop {
         }
 
         private void destroy() {
-            if (destinationFbo != 0) {
-                glDeleteFramebuffers(destinationFbo);
+            try {
+                if (org.lwjgl.opengl.GL.getCapabilities() != null) {
+                    if (destinationFbo != 0) {
+                        glDeleteFramebuffers(destinationFbo);
+                        destinationFbo = 0;
+                    }
+                    if (texture != 0) {
+                        glDeleteTextures(texture);
+                        texture = 0;
+                    }
+                    if (memoryObject != 0) {
+                        glDeleteMemoryObjectsEXT(memoryObject);
+                        memoryObject = 0;
+                    }
+                } else {
+                    destinationFbo = 0;
+                    texture = 0;
+                    memoryObject = 0;
+                }
+            } catch (Throwable t) {
                 destinationFbo = 0;
-            }
-            if (texture != 0) {
-                glDeleteTextures(texture);
                 texture = 0;
-            }
-            if (memoryObject != 0) {
-                glDeleteMemoryObjectsEXT(memoryObject);
                 memoryObject = 0;
             }
             memoryHandle = 0;
