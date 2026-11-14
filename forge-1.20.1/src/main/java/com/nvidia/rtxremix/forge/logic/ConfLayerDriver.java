@@ -69,6 +69,9 @@ public final class ConfLayerDriver {
             acquireLayer(LogicChannels.TIME_NIGHT, confsDir.resolve("time").resolve("night.conf"), 5.0f, 0.01f);
             acquireLayer(LogicChannels.WEATHER_RAIN, confsDir.resolve("weather").resolve("rain.conf"), 6.0f, 0.01f);
             acquireLayer(LogicChannels.WEATHER_THUNDER, confsDir.resolve("weather").resolve("thunder.conf"), 6.5f, 0.01f);
+            acquireLayer(LogicChannels.VIEW_DISTANCE, confsDir.resolve("view_distance.conf"), 3.0f, 0.01f);
+            acquireLayer(LogicChannels.VOLUMETRICS_SETTLING, confsDir.resolve("volumetrics").resolve("settling.conf"), 3.1f, 0.01f);
+            acquireLayer(LogicChannels.ZONE_PREFIX + "cave", confsDir.resolve("zones").resolve("cave.conf"), 8.0f, 0.05f);
 
             // Discover biome layers
             Path biomesDir = confsDir.resolve("biomes");
@@ -119,9 +122,20 @@ public final class ConfLayerDriver {
         long time = level.getDayTime() % 24000L;
         computeTimeTargets(time);
 
-        // 4. Biome (including modded biomes like alexscaves:*, biomesoplenty:*)
+        // 4. View distance endpoint fade
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc != null && mc.options != null) {
+            int rd = mc.options.renderDistance().get();
+            float vdStrength = Math.max(0.0f, Math.min(1.0f, (32.0f - rd) / 30.0f));
+            setTarget(LogicChannels.VIEW_DISTANCE, vdStrength);
+        }
+
+        // 5. Biome and Cave Zone
         if (cameraPos != null) {
             BlockPos pos = BlockPos.containing(cameraPos.x, cameraPos.y, cameraPos.z);
+            boolean inCave = !level.canSeeSkyFromBelowWater(pos) && pos.getY() < 55;
+            setTarget(LogicChannels.ZONE_PREFIX + "cave", inCave ? 1.0f : 0.0f);
+
             String activeBiomeChannel = level.getBiome(pos).unwrapKey()
                     .map(key -> {
                         String ns = key.location().getNamespace();
@@ -141,6 +155,16 @@ public final class ConfLayerDriver {
                 }
             }
         }
+
+        // 6. Volumetric settling: keep history short while layers are easing to avoid ghosting
+        boolean anyLayerMoving = false;
+        for (ActiveLayer layer : layers.values()) {
+            if (Math.abs(layer.target - layer.current) > SNAP_EPSILON) {
+                anyLayerMoving = true;
+                break;
+            }
+        }
+        setTarget(LogicChannels.VOLUMETRICS_SETTLING, anyLayerMoving ? 1.0f : 0.0f);
 
         // Apply smoothing and flush to native runtime
         flush(dtSeconds);
