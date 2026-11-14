@@ -336,13 +336,27 @@ public class RemixEntitySubmitter {
 
         ResourceManager rm = client.getResourceManager();
         Optional<Resource> res = rm.getResource(textureId);
-        if (res.isEmpty()) {
-            textureCache.put(textureId, defaultWhiteTexture);
-            return defaultWhiteTexture;
-        }
 
-        try (InputStream is = res.get().open();
-             NativeImage image = NativeImage.read(is)) {
+        NativeImage image = null;
+        boolean ownsImage = false;
+        try {
+            if (res.isPresent()) {
+                image = NativeImage.read(res.get().open());
+                ownsImage = true;
+            } else {
+                net.minecraft.client.renderer.texture.AbstractTexture tex =
+                        client.getTextureManager().getTexture(textureId);
+                if (tex instanceof net.minecraft.client.renderer.texture.DynamicTexture dt) {
+                    image = dt.getPixels();
+                    ownsImage = false;
+                }
+            }
+
+            if (image == null) {
+                // Do not cache permanently so async skin downloads can be captured when ready
+                return defaultWhiteTexture;
+            }
+
             int width = image.getWidth();
             int height = image.getHeight();
             int sizeBytes = width * height * 4;
@@ -377,8 +391,11 @@ public class RemixEntitySubmitter {
             }
         } catch (Exception e) {
             LOGGER.warn("Failed to load entity texture {}: fallback to default", textureId);
-            textureCache.put(textureId, defaultWhiteTexture);
             return defaultWhiteTexture;
+        } finally {
+            if (ownsImage && image != null) {
+                image.close();
+            }
         }
     }
 

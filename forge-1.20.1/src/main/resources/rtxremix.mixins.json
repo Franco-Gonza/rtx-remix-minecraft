@@ -8,6 +8,11 @@
     "client": [
         "MinecraftMixin",
         "RenderSystemMixin",
+        "GameRendererAccessor",
+        "CompositeRenderTypeAccessor",
+        "CompositeStateAccessor",
+        "TextureStateShardAccessor",
+        "EmptyTextureStateShardInvoker",
         "GameRendererMixin",
         "BlockEntityRenderDispatcherMixin",
         "ReceivingLevelScreenMixin",

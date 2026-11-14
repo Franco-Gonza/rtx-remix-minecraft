@@ -5,6 +5,11 @@
 package com.nvidia.rtxremix.forge.entity;
 
 import com.mojang.blaze3d.vertex.VertexFormat;
+import com.nvidia.rtxremix.forge.mixin.CompositeRenderTypeAccessor;
+import com.nvidia.rtxremix.forge.mixin.CompositeStateAccessor;
+import com.nvidia.rtxremix.forge.mixin.EmptyTextureStateShardInvoker;
+import com.nvidia.rtxremix.forge.mixin.TextureStateShardAccessor;
+import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.resources.ResourceLocation;
 import org.slf4j.Logger;
@@ -48,92 +53,81 @@ public final class RenderLayerUtils {
     private static final Map<RenderType, Boolean> streamedPerFrameCache =
             Collections.synchronizedMap(new WeakHashMap<>());
 
-    private static Field stateField = null;
-    private static Field depthTestStateField = null;
-    private static Field textureStateField = null;
-    private static Method cutoutTextureMethod = null;
-    private static boolean reflectionInitialized = false;
-
-    private static synchronized void initReflection(Class<?> layerClass) {
-        if (reflectionInitialized) return;
-        try {
-            Class<?> curr = layerClass;
-            while (curr != null && curr != Object.class) {
-                try {
-                    stateField = curr.getDeclaredField("state");
-                    stateField.setAccessible(true);
-                    break;
-                } catch (NoSuchFieldException e) {
-                    curr = curr.getSuperclass();
-                }
-            }
-
-            if (stateField != null) {
-                Class<?> compositeStateClass = stateField.getType();
-                for (Field f : compositeStateClass.getDeclaredFields()) {
-                    if (f.getName().equals("depthTestState") || f.getType().getSimpleName().contains("DepthTestState")) {
-                        depthTestStateField = f;
-                        depthTestStateField.setAccessible(true);
-                    } else if (f.getName().equals("textureState") || f.getType().getSimpleName().contains("TextureState")) {
-                        textureStateField = f;
-                        textureStateField.setAccessible(true);
-                    }
-                }
-
-                if (textureStateField != null) {
-                    Class<?> textureStateClass = textureStateField.getType();
-                    for (Method m : textureStateClass.getMethods()) {
-                        if ("cutoutTexture".equals(m.getName())) {
-                            cutoutTextureMethod = m;
-                            cutoutTextureMethod.setAccessible(true);
-                            break;
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            LOGGER.debug("Reflection init for RenderType state: {}", e.getMessage());
-        } finally {
-            reflectionInitialized = true;
-        }
-    }
-
     public static Optional<ResourceLocation> capturableTexture(RenderType layer) {
         return capturableTextureCache.computeIfAbsent(layer, RenderLayerUtils::capturableTextureUncached);
     }
 
-    @SuppressWarnings("unchecked")
     private static Optional<ResourceLocation> capturableTextureUncached(RenderType layer) {
-        if (layer == null) return Optional.empty();
+        if (layer == null) {
+            return Optional.empty();
+        }
 
-        initReflection(layer.getClass());
-        if (stateField != null) {
+        // 1. Primary path: Mixin accessors (fast, reobf-safe at runtime)
+        if ((Object) layer instanceof CompositeRenderTypeAccessor multiPhase) {
             try {
-                Object state = stateField.get(layer);
-                if (state != null) {
-                    if (depthTestStateField != null) {
-                        Object depthState = depthTestStateField.get(state);
-                        if (depthState != null && depthState.toString().contains("no_depth_test")) {
-                            return Optional.empty();
+                RenderType.CompositeState phases = multiPhase.rtxremix$getState();
+                if ((Object) phases instanceof CompositeStateAccessor stateAccessor) {
+                    RenderStateShard.EmptyTextureStateShard textureBase = stateAccessor.rtxremix$getTextureState();
+                    if ((Object) textureBase instanceof EmptyTextureStateShardInvoker invoker) {
+                        Optional<ResourceLocation> loc = invoker.rtxremix$invokeCutoutTexture();
+                        if (loc != null && loc.isPresent()) {
+                            return loc;
                         }
                     }
-
-                    if (textureStateField != null) {
-                        Object textureBase = textureStateField.get(state);
-                        if (textureBase != null) {
-                            if (cutoutTextureMethod != null) {
-                                return (Optional<ResourceLocation>) cutoutTextureMethod.invoke(textureBase);
-                            }
-                            Method m = textureBase.getClass().getDeclaredMethod("cutoutTexture");
-                            m.setAccessible(true);
-                            return (Optional<ResourceLocation>) m.invoke(textureBase);
+                    if ((Object) textureBase instanceof TextureStateShardAccessor textureShard) {
+                        Optional<ResourceLocation> loc = textureShard.rtxremix$getTexture();
+                        if (loc != null && loc.isPresent()) {
+                            return loc;
                         }
                     }
                 }
-            } catch (Exception ignored) {}
+            } catch (Throwable t) {
+                LOGGER.debug("Failed to extract texture via accessor: {}", t.getMessage());
+            }
         }
 
-        // Fallback name heuristic if reflection cannot resolve
+        // 2. Secondary path: Reflection supporting both dev (Mojmap) and production (SRG) field names
+        try {
+            Class<?> clazz = layer.getClass();
+            Field stateField = findField(clazz, "state", "f_110511_");
+            if (stateField != null) {
+                stateField.setAccessible(true);
+                Object state = stateField.get(layer);
+                if (state != null) {
+                    Field textureStateField = findField(state.getClass(), "textureState", "f_110592_");
+                    if (textureStateField != null) {
+                        textureStateField.setAccessible(true);
+                        Object textureState = textureStateField.get(state);
+                        if (textureState != null) {
+                            // Method cutoutTexture / m_142706_
+                            Method cutoutMethod = findMethod(textureState.getClass(), "cutoutTexture", "m_142706_");
+                            if (cutoutMethod != null) {
+                                cutoutMethod.setAccessible(true);
+                                @SuppressWarnings("unchecked")
+                                Optional<ResourceLocation> loc = (Optional<ResourceLocation>) cutoutMethod.invoke(textureState);
+                                if (loc != null && loc.isPresent()) {
+                                    return loc;
+                                }
+                            }
+                            // Field texture / f_110328_
+                            Field textureField = findField(textureState.getClass(), "texture", "f_110328_");
+                            if (textureField != null) {
+                                textureField.setAccessible(true);
+                                @SuppressWarnings("unchecked")
+                                Optional<ResourceLocation> loc = (Optional<ResourceLocation>) textureField.get(textureState);
+                                if (loc != null && loc.isPresent()) {
+                                    return loc;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            LOGGER.debug("Secondary reflection texture extraction failed: {}", t.getMessage());
+        }
+
+        // 3. Fallback name heuristic if reflection cannot resolve
         String name = layer.toString();
         int start = name.indexOf('[');
         int end = name.indexOf(']');
@@ -155,7 +149,34 @@ public final class RenderLayerUtils {
                 }
             }
         }
+
         return Optional.empty();
+    }
+
+    private static Field findField(Class<?> clazz, String... names) {
+        Class<?> current = clazz;
+        while (current != null && current != Object.class) {
+            for (String name : names) {
+                try {
+                    return current.getDeclaredField(name);
+                } catch (NoSuchFieldException ignored) {}
+            }
+            current = current.getSuperclass();
+        }
+        return null;
+    }
+
+    private static Method findMethod(Class<?> clazz, String... names) {
+        Class<?> current = clazz;
+        while (current != null && current != Object.class) {
+            for (String name : names) {
+                try {
+                    return current.getDeclaredMethod(name);
+                } catch (NoSuchMethodException ignored) {}
+            }
+            current = current.getSuperclass();
+        }
+        return null;
     }
 
     public static Optional<Topology> topology(RenderType layer) {

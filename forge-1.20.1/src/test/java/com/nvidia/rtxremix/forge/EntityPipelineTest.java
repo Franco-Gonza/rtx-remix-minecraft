@@ -120,4 +120,15 @@ public class EntityPipelineTest {
         assertEquals(1 << 0, com.nvidia.rtxremix.MeshInfoSurfaceTriangles.TEXCOORD_BOUNDS);
         assertNotEquals(0, com.nvidia.rtxremix.InstanceCategoryBit.DECAL_STATIC);
     }
+
+    @Test
+    void testCapturableTextureOnEntityRenderType() {
+        net.minecraft.SharedConstants.tryDetectVersion();
+        net.minecraft.server.Bootstrap.bootStrap();
+        net.minecraft.resources.ResourceLocation cowTex = new net.minecraft.resources.ResourceLocation("minecraft", "textures/entity/cow/cow.png");
+        net.minecraft.client.renderer.RenderType layer = net.minecraft.client.renderer.RenderType.entityCutout(cowTex);
+        java.util.Optional<net.minecraft.resources.ResourceLocation> extracted = com.nvidia.rtxremix.forge.entity.RenderLayerUtils.capturableTexture(layer);
+        assertTrue(extracted.isPresent(), "capturableTexture should resolve texture for entityCutout");
+        assertEquals(cowTex, extracted.get());
+    }
 }

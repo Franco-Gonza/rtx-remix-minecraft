@@ -548,7 +548,9 @@ public final class ForgeRemixRenderer {
             float upY = rightZ * forwardX - rightX * forwardZ;
             float upZ = rightX * forwardY - rightY * forwardX;
 
-            float worldFov = client.options.fov().get().floatValue();
+            float worldFov = client.gameRenderer instanceof com.nvidia.rtxremix.forge.mixin.GameRendererAccessor accessor
+                    ? (float) accessor.rtxremix$invokeGetFov(camera, tickDelta, true)
+                    : client.options.fov().get().floatValue();
             int width = Math.max(1, client.getWindow().getWidth());
             int height = Math.max(1, client.getWindow().getHeight());
             float aspect = (float) width / (float) height;

@@ -4,34 +4,46 @@
  */
 package com.nvidia.rtxremix.forge.sky;
 
+import com.mojang.blaze3d.platform.NativeImage;
 import com.nvidia.rtxremix.HardcodedVertex;
+import com.nvidia.rtxremix.InstanceCategoryBit;
+import com.nvidia.rtxremix.InstanceInfoBlendEXT;
 import com.nvidia.rtxremix.LightInfo;
 import com.nvidia.rtxremix.LightInfoDistantEXT;
 import com.nvidia.rtxremix.LightInfoDomeEXT;
 import com.nvidia.rtxremix.LightInfoRectEXT;
+import com.nvidia.rtxremix.MaterialInfo;
+import com.nvidia.rtxremix.MaterialInfoOpaqueEXT;
+import com.nvidia.rtxremix.MeshInfo;
+import com.nvidia.rtxremix.MeshInfoSurfaceTriangles;
 import com.nvidia.rtxremix.RemixAPI;
+import com.nvidia.rtxremix.RemixBridge;
 import com.nvidia.rtxremix.TextureBatchEntry;
 import com.nvidia.rtxremix.TextureFormat;
 import com.nvidia.rtxremix.TextureFromMemoryInfo;
 import com.nvidia.rtxremix.TexturePatch;
 import com.nvidia.rtxremix.TexturePatchInfo;
+import com.nvidia.rtxremix.forge.util.DirectBufferPool;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.DimensionSpecialEffects;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.world.phys.Vec3;
+import org.lwjgl.system.MemoryUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.Optional;
 
 /**
- * Manages atmospheric sky rendering, physically based dome lights, and sky ambient lighting.
- * Automatically suppresses sky radiance and ambient rect light in subterranean biomes (Alex's Caves)
- * and deep caverns (camera Y < 0) to ensure deep underground areas stay completely dark.
+ * Manages atmospheric sky rendering, physically based dome lights, sky ambient lighting,
+ * and celestial emissive meshes for the Sun and Moon phases.
  */
 public class SkyRenderer {
 
@@ -42,6 +54,16 @@ public class SkyRenderer {
 
     private static final float SKY_AMBIENT_RECT_Y = 325.0f;
     private static final float SKY_AMBIENT_RECT_HALF_SIZE = 8000.0f;
+
+    private static final ResourceLocation SUN_TEXTURE = new ResourceLocation("minecraft", "textures/environment/sun.png");
+    private static final ResourceLocation MOON_PHASES_TEXTURE = new ResourceLocation("minecraft", "textures/environment/moon_phases.png");
+
+    private static final float CELESTIAL_DISTANCE = 100.0f;
+    private static final float SUN_HALF_SIZE = 30.0f;
+    private static final float MOON_HALF_SIZE = 20.0f;
+    private static final float SUN_RADIANCE = 8.0f;
+    private static final float MOON_RADIANCE = 0.2f;
+    private static final float CELESTIAL_HORIZON_FADE_MIN_HEIGHT = -(float) Math.sin(Math.toRadians(4.0));
 
     private static boolean enabled = true;
     private static boolean skyAmbientRectEnabled = true;
@@ -58,6 +80,22 @@ public class SkyRenderer {
     private long skyDomeLightHandle = 0;
     private long skyAmbientRectHandle = 0;
     private long sunLightHandle = 0;
+
+    // Celestial assets
+    private long sunTextureHandle = 0;
+    private long moonTextureHandle = 0;
+    private long sunMaterialHandle = 0;
+    private long moonMaterialHandle = 0;
+    private long sunMeshHandle = 0;
+    private final long[] moonMeshHandles = new long[8];
+    private long celestialBlendPNext = 0;
+    private boolean celestialAssetsInitialized = false;
+
+    private final float[] sunTransformMatrix = new float[12];
+    private final float[] moonTransformMatrix = new float[12];
+    private boolean drawSunThisFrame = false;
+    private boolean drawMoonThisFrame = false;
+    private int currentMoonPhase = 0;
 
     public SkyRenderer() {
         atmosphericTexturePatch.width = AtmosphericSkyGenerator.WIDTH;
@@ -76,6 +114,9 @@ public class SkyRenderer {
     public static void setSkyDomeMultiplier(float value) { skyDomeMultiplier = value; }
 
     public void render(RemixAPI api, ClientLevel world, Vec3 cameraPos, float tickDelta) {
+        drawSunThisFrame = false;
+        drawMoonThisFrame = false;
+
         if (!enabled || api == null || world == null) return;
 
         DimensionSpecialEffects effects = world.effects();
@@ -115,6 +156,9 @@ public class SkyRenderer {
             publishSkyDome(api, pixels, skyDomeMultiplier);
             publishSkyAmbient(api, atmosphericMean[0], atmosphericMean[1], atmosphericMean[2]);
             updateSunLight(api, world, tickDelta);
+
+            ensureCelestialAssets(api);
+            updateCelestialBodies(world, cameraPos, tickDelta);
         }
     }
 
@@ -136,7 +180,6 @@ public class SkyRenderer {
         float radR, radG, radB;
 
         if (isDay) {
-            // Incoming light direction points down from the sun
             dirX = -nx;
             dirY = -ny;
             dirZ = -nz;
@@ -146,9 +189,8 @@ public class SkyRenderer {
             radG = lum * (float) Math.exp(-0.12f * opticalDepth);
             radB = lum * (float) Math.exp(-0.25f * opticalDepth);
         } else {
-            // Incoming light direction points down from the moon
             dirX = nx;
-            dirY = ny; // ny is negative, so dirY is negative (pointing down)
+            dirY = ny;
             dirZ = nz;
             float lum = 0.08f * Math.max(0.05f, -ny);
             radR = lum * 0.85f;
@@ -176,6 +218,253 @@ public class SkyRenderer {
         }
     }
 
+    private void updateCelestialBodies(ClientLevel world, Vec3 cameraPos, float tickDelta) {
+        if (cameraPos == null) return;
+
+        float skyAngle = world.getTimeOfDay(tickDelta);
+        float angle = (float) (skyAngle * 2.0 * Math.PI + Math.PI / 2.0);
+        float sunX = (float) Math.cos(angle);
+        float sunY = (float) Math.sin(angle);
+        float sunZ = 0.0f;
+
+        float cr = (float) Math.cos(Math.toRadians(35.0f));
+        float sr = (float) Math.sin(Math.toRadians(35.0f));
+        float ny = sunY * cr - sunZ * sr;
+        float nz = sunY * sr + sunZ * cr;
+        float nx = sunX;
+
+        float[] sunDir = new float[]{nx, ny, nz};
+        float[] moonDir = new float[]{-nx, -ny, -nz};
+
+        float weatherVisibility = 1.0f - world.getRainLevel(tickDelta);
+        float sunOpacity = smoothstep(CELESTIAL_HORIZON_FADE_MIN_HEIGHT, 0.0f, sunDir[1]) * weatherVisibility;
+        float moonOpacity = smoothstep(CELESTIAL_HORIZON_FADE_MIN_HEIGHT, 0.0f, moonDir[1]) * weatherVisibility;
+
+        if (sunOpacity > 0.01f && sunMeshHandle != 0) {
+            updateCelestialTransform(sunTransformMatrix, cameraPos, sunDir, SUN_HALF_SIZE);
+            drawSunThisFrame = true;
+        }
+
+        if (moonOpacity > 0.01f) {
+            currentMoonPhase = world.getMoonPhase() & 7;
+            if (moonMeshHandles[currentMoonPhase] != 0) {
+                updateCelestialTransform(moonTransformMatrix, cameraPos, moonDir, MOON_HALF_SIZE);
+                drawMoonThisFrame = true;
+            }
+        }
+    }
+
+    private static void updateCelestialTransform(float[] matrix, Vec3 cameraPos, float[] direction, float halfSize) {
+        float dx = direction[0];
+        float dy = direction[1];
+        float dz = direction[2];
+        float invLen = 1.0f / (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+        dx *= invLen;
+        dy *= invLen;
+        dz *= invLen;
+
+        float rx = dz;
+        float ry = 0.0f;
+        float rz = -dx;
+        float invRight = 1.0f / (float) Math.sqrt(rx * rx + ry * ry + rz * rz);
+        rx *= invRight;
+        rz *= invRight;
+
+        float ux = dy * rz - dz * ry;
+        float uy = dz * rx - dx * rz;
+        float uz = dx * ry - dy * rx;
+
+        matrix[0] = rx * halfSize;
+        matrix[1] = ux * halfSize;
+        matrix[2] = dx;
+        matrix[3] = (float) cameraPos.x + dx * CELESTIAL_DISTANCE;
+
+        matrix[4] = ry * halfSize;
+        matrix[5] = uy * halfSize;
+        matrix[6] = dy;
+        matrix[7] = (float) cameraPos.y + dy * CELESTIAL_DISTANCE;
+
+        matrix[8] = rz * halfSize;
+        matrix[9] = uz * halfSize;
+        matrix[10] = dz;
+        matrix[11] = (float) cameraPos.z + dz * CELESTIAL_DISTANCE;
+    }
+
+    private void ensureCelestialAssets(RemixAPI api) {
+        if (celestialAssetsInitialized) return;
+        celestialAssetsInitialized = true;
+
+        try {
+            sunTextureHandle = loadTexture(api, SUN_TEXTURE, 0x53554E5445580001L);
+            moonTextureHandle = loadTexture(api, MOON_PHASES_TEXTURE, 0x4D4F4F4E54455801L);
+
+            if (sunTextureHandle != 0) {
+                MaterialInfoOpaqueEXT sunOpaque = MaterialInfoOpaqueEXT.builder()
+                        .albedoConstant(1.0f, 1.0f, 1.0f)
+                        .opacityConstant(1.0f)
+                        .roughnessConstant(1.0f)
+                        .metallicConstant(0.0f)
+                        .useDrawCallAlphaState(true)
+                        .build();
+                MaterialInfo sunMat = MaterialInfo.builder()
+                        .albedoTexture(sunTextureHandle)
+                        .emissiveTexture(sunTextureHandle)
+                        .emissiveIntensity(SUN_RADIANCE)
+                        .filterMode(0)
+                        .wrapMode(MaterialInfo.WRAP_MODE_CLAMP, MaterialInfo.WRAP_MODE_CLAMP)
+                        .opaqueExt(sunOpaque)
+                        .build();
+                sunMaterialHandle = api.createMaterial(sunMat);
+                sunMeshHandle = createCelestialQuadMesh(api, sunMaterialHandle, 0.0f, 0.0f, 1.0f, 1.0f, 0x53554E5F4D455348L);
+            }
+
+            if (moonTextureHandle != 0) {
+                MaterialInfoOpaqueEXT moonOpaque = MaterialInfoOpaqueEXT.builder()
+                        .albedoConstant(1.0f, 1.0f, 1.0f)
+                        .opacityConstant(1.0f)
+                        .roughnessConstant(1.0f)
+                        .metallicConstant(0.0f)
+                        .useDrawCallAlphaState(true)
+                        .build();
+                MaterialInfo moonMat = MaterialInfo.builder()
+                        .albedoTexture(moonTextureHandle)
+                        .emissiveTexture(moonTextureHandle)
+                        .emissiveIntensity(MOON_RADIANCE)
+                        .filterMode(0)
+                        .wrapMode(MaterialInfo.WRAP_MODE_CLAMP, MaterialInfo.WRAP_MODE_CLAMP)
+                        .opaqueExt(moonOpaque)
+                        .build();
+                moonMaterialHandle = api.createMaterial(moonMat);
+
+                for (int phase = 0; phase < 8; phase++) {
+                    int col = phase % 4;
+                    int row = phase / 4;
+                    float minU = col / 4.0f;
+                    float minV = row / 2.0f;
+                    float maxU = (col + 1) / 4.0f;
+                    float maxV = (row + 1) / 2.0f;
+                    moonMeshHandles[phase] = createCelestialQuadMesh(
+                            api, moonMaterialHandle, minU, minV, maxU, maxV, 0x4D4F4F4E00000000L | phase);
+                }
+            }
+
+            InstanceInfoBlendEXT blend = InstanceInfoBlendEXT.textureTimesVertexColorAlphaTest(1);
+            blend.alphaBlendEnabled = 1;
+            blend.srcColorBlendFactor = InstanceInfoBlendEXT.VK_BLEND_FACTOR_ONE;
+            blend.dstColorBlendFactor = InstanceInfoBlendEXT.VK_BLEND_FACTOR_ONE;
+            blend.srcAlphaBlendFactor = InstanceInfoBlendEXT.VK_BLEND_FACTOR_ZERO;
+            blend.dstAlphaBlendFactor = InstanceInfoBlendEXT.VK_BLEND_FACTOR_ONE;
+            celestialBlendPNext = blend.allocNative(0);
+        } catch (Exception e) {
+            LOGGER.error("Failed to initialize celestial assets in Remix: {}", e.getMessage(), e);
+        }
+    }
+
+    private long loadTexture(RemixAPI api, ResourceLocation id, long hash) {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null) return 0;
+        Optional<Resource> res = client.getResourceManager().getResource(id);
+        if (res.isEmpty()) {
+            LOGGER.warn("Missing celestial texture: {}", id);
+            return 0;
+        }
+
+        try (InputStream is = res.get().open();
+             NativeImage img = NativeImage.read(is)) {
+            int w = img.getWidth();
+            int h = img.getHeight();
+            int sizeBytes = w * h * 4;
+            ByteBuffer buf = MemoryUtil.memAlloc(sizeBytes);
+            try {
+                for (int y = 0; y < h; y++) {
+                    for (int x = 0; x < w; x++) {
+                        int abgr = img.getPixelRGBA(x, y);
+                        buf.put((byte) (abgr & 0xFF));
+                        buf.put((byte) ((abgr >> 8) & 0xFF));
+                        buf.put((byte) ((abgr >> 16) & 0xFF));
+                        buf.put((byte) ((abgr >> 24) & 0xFF));
+                    }
+                }
+                buf.flip();
+                TextureFromMemoryInfo info = TextureFromMemoryInfo.builder()
+                        .hash(hash)
+                        .size(w, h)
+                        .format(TextureFormat.RGBA8_UNORM)
+                        .pixelData(buf)
+                        .build();
+                return api.createTextureFromMemory(info);
+            } finally {
+                MemoryUtil.memFree(buf);
+            }
+        } catch (Exception e) {
+            LOGGER.error("Failed to load celestial texture {}: {}", id, e.getMessage(), e);
+            return 0;
+        }
+    }
+
+    private long createCelestialQuadMesh(RemixAPI api, long materialHandle,
+                                         float minU, float minV, float maxU, float maxV,
+                                         long hash) {
+        int vertexBufferSize = 4 * HardcodedVertex.STRIDE;
+        int indexBufferSize = 6 * Integer.BYTES;
+
+        ByteBuffer vertexBuffer = DirectBufferPool.acquire(vertexBufferSize);
+        ByteBuffer indexBuffer = DirectBufferPool.acquire(indexBufferSize);
+
+        try {
+            // 4 vertices of quad in local space (-1..1)
+            putVertex(vertexBuffer, -1.0f, -1.0f, 0.0f, 0.0f, 0.0f, -1.0f, minU, maxV);
+            putVertex(vertexBuffer,  1.0f, -1.0f, 0.0f, 0.0f, 0.0f, -1.0f, maxU, maxV);
+            putVertex(vertexBuffer,  1.0f,  1.0f, 0.0f, 0.0f, 0.0f, -1.0f, maxU, minV);
+            putVertex(vertexBuffer, -1.0f,  1.0f, 0.0f, 0.0f, 0.0f, -1.0f, minU, minV);
+            vertexBuffer.flip();
+
+            indexBuffer.putInt(0).putInt(1).putInt(2);
+            indexBuffer.putInt(0).putInt(2).putInt(3);
+            indexBuffer.flip();
+
+            MeshInfoSurfaceTriangles surface = new MeshInfoSurfaceTriangles();
+            surface.vertexBuffer = vertexBuffer;
+            surface.vertexCount = 4;
+            surface.indexBuffer = indexBuffer;
+            surface.indexCount = 6;
+            surface.material = materialHandle;
+
+            MeshInfo meshInfo = MeshInfo.builder()
+                    .hash(hash)
+                    .surfaces(surface)
+                    .build();
+            return api.createMesh(meshInfo);
+        } catch (Exception e) {
+            LOGGER.error("Failed to create celestial quad mesh: {}", e.getMessage(), e);
+            return 0;
+        } finally {
+            DirectBufferPool.release(vertexBuffer);
+            DirectBufferPool.release(indexBuffer);
+        }
+    }
+
+    private static void putVertex(ByteBuffer buf, float x, float y, float z,
+                                  float nx, float ny, float nz,
+                                  float u, float v) {
+        buf.putFloat(x).putFloat(y).putFloat(z);
+        buf.putFloat(nx).putFloat(ny).putFloat(nz);
+        buf.putFloat(u).putFloat(v);
+        buf.putInt(0xFFFFFFFF); // color
+        buf.putInt(0); // texcoordBoundsMin
+        buf.putInt(0); // texcoordBoundsMax
+        buf.putInt(0); // _pad0
+        buf.putInt(0); // _pad1
+        buf.putInt(0); // _pad2
+        buf.putInt(0); // _pad3
+        buf.putInt(0); // _pad4
+    }
+
+    private static float smoothstep(float edge0, float edge1, float value) {
+        float t = Math.max(0.0f, Math.min(1.0f, (value - edge0) / (edge1 - edge0)));
+        return t * t * (3.0f - 2.0f * t);
+    }
+
     private void renderFixedSky(RemixAPI api, float[] radiance) {
         if (sunLightHandle != 0) {
             try { api.destroyLight(sunLightHandle); } catch (Exception ignored) {}
@@ -199,32 +488,30 @@ public class SkyRenderer {
             lastFixedG = g;
             lastFixedB = b;
         }
-
-        publishSkyAmbient(api, r, g, b);
     }
 
-    private void publishSkyDome(RemixAPI api, ByteBuffer pixels, float multiplier) {
+    private void publishSkyDome(RemixAPI api, ByteBuffer textureData, float domeIntensity) {
         try {
             if (skyTextureHandle == 0) {
-                TextureFromMemoryInfo texInfo = TextureFromMemoryInfo.builder()
-                        .hash(0x51C7_53C1_0000_0001L)
+                TextureFromMemoryInfo textureInfo = TextureFromMemoryInfo.builder()
+                        .hash(0x534B_595F_444F_4D45L) // "SKY_DOME"
                         .size(AtmosphericSkyGenerator.WIDTH, AtmosphericSkyGenerator.HEIGHT)
                         .format(TextureFormat.RGBA16_SFLOAT)
-                        .pixelData(pixels)
+                        .pixelData(textureData)
                         .build();
-                skyTextureHandle = api.createTextureFromMemory(texInfo);
+                skyTextureHandle = api.createTextureFromMemory(textureInfo);
 
                 LightInfoDomeEXT domeExt = new LightInfoDomeEXT();
                 domeExt.setColorTexture(skyTextureHandle);
                 LightInfo lightInfo = LightInfo.builder()
-                        .hash(0x534B_595F_444F_4D45L) // "SKY_DOME"
-                        .radiance(multiplier, multiplier, multiplier)
+                        .hash(0x534B_595F_4C49_4748L) // "SKY_LIGH"
+                        .radiance(domeIntensity, domeIntensity, domeIntensity)
                         .domeExt(domeExt)
                         .build();
                 skyDomeLightHandle = api.createLight(lightInfo);
             } else {
                 try {
-                    atmosphericTexturePatch.pixelData = pixels;
+                    atmosphericTexturePatch.pixelData = textureData;
                     atmosphericTextureEntry.handle = skyTextureHandle;
                     api.updateTextureFromMemory(atmosphericTextureUpdate);
                 } catch (Exception e) {
@@ -232,7 +519,7 @@ public class SkyRenderer {
                 }
             }
         } catch (Exception e) {
-            LOGGER.warn("Sky dome draw failed: {}", e.getMessage());
+            LOGGER.error("Sky dome publish failed: {}", e.getMessage());
         }
     }
 
@@ -276,12 +563,27 @@ public class SkyRenderer {
         if (skyAmbientRectHandle != 0) {
             try { api.drawLightInstance(skyAmbientRectHandle); } catch (Exception ignored) {}
         }
+
+        if (drawSunThisFrame && sunMeshHandle != 0) {
+            try {
+                api.drawInstance(sunMeshHandle, sunTransformMatrix, InstanceCategoryBit.SKY, 1, celestialBlendPNext);
+            } catch (Exception ignored) {}
+        }
+
+        if (drawMoonThisFrame && moonMeshHandles[currentMoonPhase] != 0) {
+            try {
+                api.drawInstance(moonMeshHandles[currentMoonPhase], moonTransformMatrix, InstanceCategoryBit.SKY, 1, celestialBlendPNext);
+            } catch (Exception ignored) {}
+        }
     }
 
     public void clearLevelState(RemixAPI api) {
         lastFixedR = -1.0f;
         lastFixedG = -1.0f;
         lastFixedB = -1.0f;
+        drawSunThisFrame = false;
+        drawMoonThisFrame = false;
+
         if (api == null) return;
         if (sunLightHandle != 0) {
             try { api.destroyLight(sunLightHandle); } catch (Exception ignored) {}
@@ -299,6 +601,38 @@ public class SkyRenderer {
             try { api.destroyTexture(skyTextureHandle); } catch (Exception ignored) {}
             skyTextureHandle = 0;
         }
+
+        if (celestialBlendPNext != 0) {
+            RemixBridge.freeExt(celestialBlendPNext);
+            celestialBlendPNext = 0;
+        }
+        if (sunMeshHandle != 0) {
+            try { api.destroyMesh(sunMeshHandle); } catch (Exception ignored) {}
+            sunMeshHandle = 0;
+        }
+        for (int i = 0; i < moonMeshHandles.length; i++) {
+            if (moonMeshHandles[i] != 0) {
+                try { api.destroyMesh(moonMeshHandles[i]); } catch (Exception ignored) {}
+                moonMeshHandles[i] = 0;
+            }
+        }
+        if (sunMaterialHandle != 0) {
+            try { api.destroyMaterial(sunMaterialHandle); } catch (Exception ignored) {}
+            sunMaterialHandle = 0;
+        }
+        if (moonMaterialHandle != 0) {
+            try { api.destroyMaterial(moonMaterialHandle); } catch (Exception ignored) {}
+            moonMaterialHandle = 0;
+        }
+        if (sunTextureHandle != 0) {
+            try { api.destroyTexture(sunTextureHandle); } catch (Exception ignored) {}
+            sunTextureHandle = 0;
+        }
+        if (moonTextureHandle != 0) {
+            try { api.destroyTexture(moonTextureHandle); } catch (Exception ignored) {}
+            moonTextureHandle = 0;
+        }
+        celestialAssetsInitialized = false;
     }
 
     private static boolean isSubterraneanBiome(ClientLevel world, Vec3 cameraPos) {
