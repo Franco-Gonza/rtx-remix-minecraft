@@ -634,8 +634,7 @@ public final class ForgeRemixRenderer {
         if (client == null || client.getEntityRenderDispatcher() == null) {
             return false;
         }
-        entityPass.captureAndSubmit(entity, client.getEntityRenderDispatcher(), tickDelta, entitySubmitter);
-        return true;
+        return entityPass.captureAndSubmit(entity, client.getEntityRenderDispatcher(), tickDelta, entitySubmitter);
     }
 
     public boolean renderBlockEntityInPlace(net.minecraft.world.level.block.entity.BlockEntity be, float tickDelta) {

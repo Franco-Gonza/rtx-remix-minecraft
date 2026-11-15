@@ -129,6 +129,18 @@ public final class RenderLayerUtils {
 
         // 3. Fallback name heuristic if reflection cannot resolve
         String name = layer.toString();
+        if (name.contains("species_cutout_") || name.contains("species_translucent_")) {
+            String prefix = name.contains("species_cutout_") ? "species_cutout_" : "species_translucent_";
+            String species = name.substring(name.indexOf(prefix) + prefix.length()).trim();
+            int sep = species.indexOf(':');
+            if (sep > 0) species = species.substring(0, sep).trim();
+            int brk = species.indexOf('[');
+            if (brk > 0) species = species.substring(0, brk).trim();
+            if (!species.isEmpty()) {
+                return Optional.of(new ResourceLocation("bookofdragons", "textures/entity/genetics/" + species + "/base.png"));
+            }
+        }
+
         int start = name.indexOf('[');
         int end = name.indexOf(']');
         if (start >= 0 && end > start) {

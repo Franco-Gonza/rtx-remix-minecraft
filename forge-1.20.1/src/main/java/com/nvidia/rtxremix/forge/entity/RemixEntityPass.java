@@ -62,15 +62,16 @@ public class RemixEntityPass {
             result = renderOneEntity(entity, dispatcher, tickDelta);
         } catch (Exception e) {
             LOGGER.error("Error capturing entity {}: {}", entity.getType(), e.getMessage());
-            return true;
+            return false;
         } finally {
             dispatcher.setRenderShadow(prevShadow);
         }
 
         if (result != null) {
             submitter.submitEntity(result, Vec3.ZERO);
+            return true;
         }
-        return true;
+        return false;
     }
 
     private EntityCaptureResult renderOneEntity(Entity entity, EntityRenderDispatcher dispatcher, float tickDelta) {

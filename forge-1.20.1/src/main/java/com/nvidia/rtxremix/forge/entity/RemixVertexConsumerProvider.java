@@ -75,10 +75,8 @@ public class RemixVertexConsumerProvider implements MultiBufferSource {
         ResourceLocation textureId;
         if (texOpt.isPresent()) {
             textureId = texOpt.get();
-        } else if (RenderLayerUtils.isCapturableUntexturedLayer(layer)) {
-            textureId = RenderLayerUtils.UNTEXTURED_LAYER_ID;
         } else {
-            return NoOpVertexConsumer.INSTANCE;
+            textureId = RenderLayerUtils.UNTEXTURED_LAYER_ID;
         }
 
         RenderLayerUtils.Topology topology = RenderLayerUtils.topology(layer)
