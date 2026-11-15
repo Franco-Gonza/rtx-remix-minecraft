@@ -36,6 +36,7 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
 
 ## 3. Historial Reciente de Commits Git
 
+* `f75f4c6` - `docs(qa): initialize goal mandate and progress tracking baseline`
 * `a70b243` - `fix(forge): resolve bookofdragons species textures and fallback untextured layers for entity capture`
 * `0b9786b` - `fix(forge): enable thinWall on translucent glass for dual-interface Fresnel reflections`
 * `b3265c1` - `fix(forge): compute deterministic light hash based on coordinates and shape for ReSTIR stability`
@@ -49,43 +50,43 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
 
 ---
 
-## 4. Estado de los Subsistemas
+## 4. Hallazgos Consolidados de Auditoría — Fase 1
 
-### A. Arquitectura e Interoperabilidad JNI (Estado: Funcional / En Auditoría)
-* **Componentes:** JNI Shim `remixbridge.dll`, `DirectQuadWriter` (stride de 64 bytes off-heap), `GlInterop` (WGL / Vulkan memoria compartida y semáforos).
-* **Presentación:** Redirección de `RenderSystem.flipFrame` a `presentFrameVk()` para control de swapchain nativo Vulkan.
-* **Estado:** Estable en pruebas unitarias; requiere verificación de contención y recolección de memoria fuera de heap en sesiones prolongadas.
+La Fase 1 de Auditoría ha concluido con la identificación exhaustiva de defectos de raíz en cada dominio:
 
-### B. Path Tracing, Iluminación y Volumetría (Estado: Funcional / Requiere Validación Óptica)
-* **Componentes:** Trazado de rayos con ReSTIR Direct/Indirect, dispersión volumétrica (froxels), dispersión atmosférica, emisión de cuerpos celestes (sol/luna).
-* **Mejoras Aplicadas:** Hashes deterministas de luz (`contentHash()`) y materiales `thinWall(0.01f)` para cristales refractivos con Fresnel de doble cara.
-* **Atención:** `enableAtmosphere = true` está configurado en `rtx.conf`, pero se requiere auditar la interacción física real de los haces de luz (god rays) contra oclusores de terreno y copas de árboles sin dar por sentado el flag.
+### A. Agente A — Arquitectura e Integración (ESTABLE / VERIFICADO)
+* **Estado:** JNI shim `remixbridge.dll`, `GlInterop`, sincronización WGL/Vulkan y gestión de memoria off-heap verificados como estables sin fugas críticas en el ciclo de vida de buffers.
 
-### C. DLSS, Frame Generation y Reflex (Estado: Activo / En Calibración de Sincronización)
-* **Componentes:** Inicialización NGX, vectores de movimiento (motion vectors), buffer de profundidad, desvanecimiento de jitter y presentación Vulkan.
-* **Condición Crítica:** `maxFps` en Minecraft debe estar en `Unlimited` para evitar conflictos de cadencia de frames con NVIDIA Reflex y el generador de fotogramas por hardware.
-* **Métrica Esperada:** 80 - 110 FPS en resolución 3440x1417 (perfil Balanced/Performance).
+### B. Agente B — Path Tracing e Iluminación (DEFECTOS CRÍTICOS IDENTIFICADOS)
+* **Causa Raíz de God Rays Desactivados:**
+  1. Parámetro `rtx.volumetrics.enable = true` ausente en runtime efectivo (sólo existía `enableAtmosphere`).
+  2. Error de sintaxis en froxels (`256.f;` residual en conf/parser) impidiendo la inicialización correcta del volumen.
+  3. Coeficientes de dispersión volumétrica en valores por defecto de vacío (scattering = 0).
+  4. Luz rectangular ambiente saturando y lavando el volumen de froxels.
+  5. Recreación continua de la fuente de luz solar destruyendo la acumulación de reservorios ReSTIR temporalmente.
 
-### D. Compatibilidad de Mods (Estado: Parcialmente Resuelto / Ampliando Cobertura)
-* **Biomes O' Plenty:** Detección de capas de follaje cutout asegurada; prevención de degradación a `solid`.
-* **Dynamic Trees:** Consulta de `model.getModelData(...)` resuelta contra la región de chunks activa en compilación.
-* **Book of Dragons / FaunaEngine:** Texturas de especies resueltas (`bookofdragons:textures/entity/genetics/<especie>/base.png`), descarte ciego eliminado y fallback a render OpenGL cuando no hay capas capturadas.
-* **Sophisticated Backpacks, Alex's Mobs, Alex's Caves:** Monitoreo activo de capas de renderizado dinámicas y entidades con animaciones complejas.
+### C. Agente C — DLSS y Frame Generation (DEFECTOS CRÍTICOS IDENTIFICADOS)
+* **DLFG Inactivo:** Directiva de Frame Generation inactiva en `run/rtx.conf`.
+* **Desincronización de Vectores de Movimiento:** `ForgeRemixRenderer.updateCamera(1.0f)` evalúa la cámara con tick parcial fijo en `1.0f` en vez del delta real entre fotogramas, desfasando la reproyección temporal de DLSS y DLFG.
 
-### E. Rendimiento y Presión de CPU / GPU (Estado: Identificado y Acotado)
-* **Cuello de Botella CPU:** `simulationDistance: 32` calcula 4.096 chunks en un único hilo, saturando el GC y desplomando el 1% Low a 18 FPS.
-* **Ajuste de Referencia:** `simulationDistance` calibrado a 10–12 chunks manteniendo `renderDistance: 16`.
-* **Pipeline de Render:** Captura de geometría directa sin alocaciones por quad/bloque en el hilo principal de renderizado.
+### D. Agente D — Compatibilidad de Mods (DEFECTOS CRÍTICOS IDENTIFICADOS)
+* **Descarte de Geometría en Primitivas TRIANGLES:** Descarte sistemático de quads/triángulos en primitivas `GL_TRIANGLES` afectando rayos y lásers de Alex's Caves.
+* **Límite de Vértices:** Cap de 16k vértices por buffer provocando truncamiento en modelos moddeados complejos.
+* **Reflexión de RenderType:** Fallos al resolver dinámicamente `RenderType` personalizados en mods externos.
+
+### E. Agente E — Rendimiento (DEFECTOS CRÍTICOS IDENTIFICADOS)
+* **Invalidación Masiva de BLAS:** Hashing aleatorio residual en `RemixEntitySubmitter` destruye la caché de BLAS cada fotograma, forzando reconstrucciones completas en GPU.
+* **Drenaje de Malla de Chunks Sin Presupuesto:** Vaciado sin límite de tiempo (unbudgeted drain) saturando el hilo de render.
+* **Alocaciones en `DirectQuadWriter`:** Fugas de alocaciones temporales por quad en captura de terreno.
 
 ---
 
-## 5. Defectos Abiertos, Bloqueos y Misiones Asignadas
+## 5. Matriz de Defectos Abiertos y Asignaciones para Fase 2
 
-| Defecto / Tarea | Subsistema | Severidad | Misión Asignada |
-| :--- | :--- | :--- | :--- |
-| Comprobar transmisión y refracción efectiva de haces de luz solares/lunares a través del follaje moddeado | Path Tracing / Atmósfera | Alta | **AGENTE B** (Iluminación & Rayos) |
-| Validar precisión de vectores de movimiento y ratio de FPS renderizados vs. FPS presentados con FG activo | DLSS & FG | Alta | **AGENTE C** (DLSS / FG / Reflex) |
-| Auditoría de memory leaks off-heap en `DirectQuadWriter` y swaps de semáforos Vulkan | Arquitectura / JNI | Media | **AGENTE A** (Arquitectura & JNI) |
-| Compatibilidad de entidades dinámicas y partículas en Alex's Caves y Sophisticated Backpacks | Compatibilidad Mods | Media | **AGENTE D** (Compatibilidad) |
-| Perfilado de tiempos de compilación de BLAS y pacing de carga de chunks a 16 chunks | Rendimiento | Media | **AGENTE E** (Rendimiento) |
-| Suite de regresión automatizada continua y escenarios reproducibles con cámara determinista | QA & Regresiones | Continua | **AGENTE F** (QA & Regresiones) |
+| Defecto / Causa Raíz | Dominio | Severidad | Agente Asignado |
+| :--- | :--- | :---: | :---: |
+| Corregir `rtx.volumetrics.enable`, sintaxis `256.f;`, coeficientes de scattering, luz ambiente y persistencia solar ReSTIR | Path Tracing / Froxels | Bloqueante | **AGENTE B** |
+| Activar DLFG en `run/rtx.conf` y corregir cálculo de motion vectors en `updateCamera` con tick delta real | DLSS / DLFG / Reflex | Bloqueante | **AGENTE C** |
+| Soporte para primitivas `TRIANGLES`, ampliación de buffer de 16k vértices y resolución de `RenderType` custom | Compatibilidad Mods | Alta | **AGENTE D** |
+| Eliminar hash aleatorio en `RemixEntitySubmitter`, presupuestar drenaje de chunks y limpiar alocaciones en `DirectQuadWriter` | Rendimiento / BLAS | Alta | **AGENTE E** |
+| Regresiones automatizadas, verificación de estabilidad y validación de escenarios a 3440x1417 / 16 chunks | QA & Regresiones | Continua | **AGENTE F** |
