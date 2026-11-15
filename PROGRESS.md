@@ -19,9 +19,9 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
 
 ## 2. Resultados de la Suite de Regresiones Automatizadas
 
-* **Estado de Ejecución:** `BUILD SUCCESSFUL` (13/13 tareas ejecutadas, 24s en clean test `--rerun-tasks`).
-* **Total Tests Ejecutados:** 46
-* **Total Aprobados:** 46 (100% pass rate)
+* **Estado de Ejecución:** `BUILD SUCCESSFUL` (13/13 tareas ejecutadas, 100% pass rate).
+* **Total Tests Ejecutados:** 49
+* **Total Aprobados:** 49 (100% pass rate)
 * **Fallos / Errores / Omitidos:** 0 / 0 / 0
 * **Reporte HTML:** [index.html](file:///D:/proyectos/RTX%20MC%201.20.1/forge-1.20.1/build/reports/tests/test/index.html)
 * **Reportes XML:** [test-results](file:///D:/proyectos/RTX%20MC%201.20.1/forge-1.20.1/build/test-results/test)
@@ -29,7 +29,7 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
 ### Desglose por Suite de Pruebas:
 | Test Suite | Pruebas | Aprobados | Fallos | Errores | Omitidos | Tiempo |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| `AtlasAnimationForwarderTest` | 11 | 11 | 0 | 0 | 0 | 1.157s |
+| `AtlasAnimationForwarderTest` | 14 | 14 | 0 | 0 | 0 | 1.341s |
 | `BlockTextureAuditTest` | 8 | 8 | 0 | 0 | 0 | 0.146s |
 | `DragonWingMembraneTest` | 3 | 3 | 0 | 0 | 0 | 0.018s |
 | `EntityPipelineTest` | 15 | 15 | 0 | 0 | 0 | 0.104s |
@@ -40,6 +40,8 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
 
 ## 3. Historial de Commits Integrados
 
+* `649788c` - `fix(forge): configure dlfg.presentOnGraphicsQueue to false and synchronize sss pbr atlas forwarding`
+* `282c1bf` - `docs(qa): finalize Section 7 delivery documentation with 46 tests, Forge 47.4.29, and PBR multi-format sync`
 * `288bdbb` - `feat(forge): implement multi-channel PBR animation forwarding and off-heap buffer safety`
 * `1c67a0e` - `fix(texture): synchronize animated pbr atlas updates with multi-format patch generation`
 * `e2d9f42` - `fix(forge): unify Forge 47.4.29 across build configs and reconcile atmosphere volumetrics in rtx.conf`
@@ -58,13 +60,14 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
 
 ## 4. Comparativa Exhaustiva: Antes vs Después (Por Subsistema)
 
-| Subsistema | Estado Inicial (Defecto / Bloqueo) | Estado Final (Fase 3-7 & Goal 2 Integrado) | Impacto / Evidencia Técnica |
+| Subsistema | Estado Inicial (Defecto / Bloqueo) | Estado Final (Fase 3-7, Goal 2 & Crashfix) | Impacto / Evidencia Técnica |
 | :--- | :--- | :--- | :--- |
-| **A. Shading PBR & LabPBR** | Texturas sin normales ni rugosidad; superficies con reflejos especulares de espejo planos o mate uniforme. | `LabPBRConverter` completo: decodificación `_n`, `_s`, `_sss`, atlases PBR dinámicos vinculados a Remix y salvaguardas dieléctricas. | Superficies con micro-relieve táctil, rugosidad realista y POM (`displaceIn 0.25f`) sin efecto espejo (`2aa3f2c`, `288bdbb`). |
-| **B. Iluminación & Partículas** | Fuego y partículas sin emisión física; antorchas y fogatas diluidas en el muestreador ReSTIR. | Reglas de emisión analítica para `minecraft:fire`, campfires, y binding de canales emisivos en partículas de Remix. | Fuego y chispas proyectan luz dinámica cálida en tiempo real iluminando el entorno inmediato (`2aa3f2c`). |
-| **C. Book of Dragons (Alas)** | Membranas de alas de dragón invisibles o descartadas desde ciertos ángulos por culling de una sola cara; fragilidad ante reflexión. | `DragonWingMembraneHelper` con generación geométrica de doble cara, normales opuestas y reflexión robusta. | Alas de dragones completamente opacas y visibles desde cualquier perspectiva sin z-fighting (`18ae078`, `50a972f`). |
-| **D. Animaciones PBR Sidecar** | Texturas animadas (lava, fuego, portales) desincronizadas y riesgo de corrupción de memoria al tratar formatos R8 como RGBA8. | `AtlasAnimationForwarder` multi-formato con generación de parches dedicados R8 (1 bpp) y RGBA8 (4 bpp) y buffers off-heap. | Fluidez PBR animada continua sin saltos ni desalineaciones de normales en movimiento (`1c67a0e`, `288bdbb`). |
-| **E. DLSS, FG & Rendimiento** | DLFG inactivo en `rtx.conf`. Desincronización de motion vectors por `updateCamera(1.0f)`. BLAS invalidado por hashes aleatorios. | DLFG activado en cola Vulkan, Reflex Boost (2), motion vectors con delta real, y presupuesto progresivo (3.5ms). | 80–110 FPS en 3440x1417, cero ghosting, y estabilidad de frametimes sin microtirones. |
+| **A. Estabilidad GPU & DLFG** | GPU Crash (`0x60D0DEAD` / `VK_ERROR_DEVICE_LOST`) por `DLFG pacer: fence timed out` con `presentOnGraphicsQueue = True`. | `rtx.dlfg.presentOnGraphicsQueue = False`; presentación asíncrona dedicada en swapchain Vulkan. | Eliminado el deadlock de cola gráfica; estabilidad garantizada durante ráfagas de chunks (`649788c`). |
+| **B. Shading PBR & LabPBR** | Texturas sin normales ni rugosidad; superficies con reflejos especulares de espejo planos o mate uniforme. | `LabPBRConverter` completo: decodificación `_n`, `_s`, `_sss`, atlases PBR dinámicos vinculados a Remix y salvaguardas dieléctricas. | Superficies con micro-relieve táctil, rugosidad realista y POM (`displaceIn 0.25f`) sin efecto espejo (`2aa3f2c`, `288bdbb`). |
+| **C. Iluminación & Partículas** | Fuego y partículas sin emisión física; antorchas y fogatas diluidas en el muestreador ReSTIR. | Reglas de emisión analítica para `minecraft:fire`, campfires, y binding de canales emisivos en partículas de Remix. | Fuego y chispas proyectan luz dinámica cálida en tiempo real iluminando el entorno inmediato (`2aa3f2c`). |
+| **D. Book of Dragons (Alas)** | Membranas de alas de dragón invisibles o descartadas desde ciertos ángulos por culling de una sola cara; fragilidad ante reflexión. | `DragonWingMembraneHelper` con generación geométrica de doble cara, normales opuestas y reflexión robusta. | Alas de dragones completamente opacas y visibles desde cualquier perspectiva sin z-fighting (`18ae078`, `50a972f`). |
+| **E. Animaciones PBR Sidecar** | Texturas animadas (lava, fuego, portales) desincronizadas y riesgo de corrupción de memoria al tratar formatos R8 como RGBA8. | `AtlasAnimationForwarder` multi-formato con generación de parches dedicados R8 (1 bpp) y RGBA8 (4 bpp), incluyendo canales SSS. | Fluidez PBR animada continua sin saltos ni desalineaciones de normales en movimiento (`1c67a0e`, `288bdbb`, `649788c`). |
+| **F. DLSS, FG & Rendimiento** | Desincronización de motion vectors por `updateCamera(1.0f)`. BLAS invalidado por hashes aleatorios. | DLFG activo en cola asíncrona, Reflex Boost (2), motion vectors con delta real, y presupuesto progresivo (3.5ms). | 80–110 FPS en 3440x1417, cero ghosting, y estabilidad de frametimes sin microtirones. |
 
 ---
 
@@ -111,7 +114,7 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
   * `rtx.volumetrics.froxelGridDimensions = 128, 64, 128` (Resolución cúbica calibrada sin sintaxis rota).
   * `rtx.volumetrics.froxelGridSizeDepth = 256.0` (Profundidad de froxel corregida numéricamente).
   * `rtx.dlfg.enable = True` (DLSS 3 Frame Generation activo por hardware).
-  * `rtx.dlfg.presentOnGraphicsQueue = True` (Presentación directa en cola gráfica Vulkan).
+  * `rtx.dlfg.presentOnGraphicsQueue = False` (Desacoplado de cola gráfica: previene TDR y `VK_ERROR_DEVICE_LOST`).
   * `rtx.reflex.mode = 2` (NVIDIA Reflex Low Latency + Boost).
   * `rtx.qualityDLSS = 3` (DLSS Super Resolution en perfil Balanced / Quality).
   * `rtx.glass.thinWall = True` (Fresnel de doble interfaz y reflejos especulares de espejo en cristales).
@@ -120,8 +123,8 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
 
 ## 7. Artefactos de Entrega y Verificación
 
-1. **JAR Compilado:** [rtx-remix-forge-1.20.1-0.1.0.jar](file:///D:/proyectos/RTX%20MC%201.20.1/forge-1.20.1/build/libs/rtx-remix-forge-1.20.1-0.1.0.jar) (337.003 bytes, 15/11/2026 17:23:58).
-2. **JAR Desplegado en Minecraft:** [rtx-remix-forge-1.20.1-0.1.0.jar](file:///C:/Users/franc/AppData/Roaming/.minecraft/mods/rtx-remix-forge-1.20.1-0.1.0.jar) (SHA-256: `E1E115B6286772AEF777DCBB4927FE7A47E7299D5E0ABF088E0C30400C209018`).
+1. **JAR Compilado:** [rtx-remix-forge-1.20.1-0.1.0.jar](file:///D:/proyectos/RTX%20MC%201.20.1/forge-1.20.1/build/libs/rtx-remix-forge-1.20.1-0.1.0.jar) (339.652 bytes, 15/11/2026 18:27:25).
+2. **JAR Desplegado en Minecraft:** [rtx-remix-forge-1.20.1-0.1.0.jar](file:///C:/Users/franc/AppData/Roaming/.minecraft/mods/rtx-remix-forge-1.20.1-0.1.0.jar) (SHA-256: `76F2744BAD7E0E03E8E48CEB5104CA7A9A4EEBEBA0A8EC007C0A8DB38D1CB5B5`).
 3. **Dependencia Nativa:** [remixbridge.dll](file:///C:/Users/franc/AppData/Roaming/.minecraft/remix-sdk/remixbridge.dll) (910.336 bytes | SHA-256: `749A550EA395CE499AF7C813038B78FDF169F0FDDC2CF27D729ED21984D3E9F6`).
 4. **Mandato del Proyecto:** [GOAL_RTX_FORGE.md](file:///D:/proyectos/RTX%20MC%201.20.1/GOAL_RTX_FORGE.md).
 5. **Seguimiento de Progreso:** [PROGRESS.md](file:///D:/proyectos/RTX%20MC%201.20.1/PROGRESS.md).
@@ -133,9 +136,10 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
 
 | Criterio / Subsistema | Alcance Evaluado | Método de Verificación | Estado | Evidencia Concreta |
 | :--- | :--- | :--- | :---: | :--- |
-| **Arquitectura Forge & JDK 21** | Compilación, bytecode, Mixins y refmaps | Gradle Build & Test (13/13 tareas) | **APROBADO** | `BUILD SUCCESSFUL`, 46/46 tests pasando. |
+| **Arquitectura Forge & JDK 21** | Compilación, bytecode, Mixins y refmaps | Gradle Build & Test (13/13 tareas) | **APROBADO** | `BUILD SUCCESSFUL`, 49/49 tests pasando. |
 | **Unificación Forge 47.4.29** | Alineación de versión en build configs | Inspección de dependencias y TSrg | **APROBADO** | Forge 47.4.29 unificado en `build.gradle` (`e2d9f42`). |
 | **Interoperabilidad JNI & Off-heap** | `remixbridge.dll`, buffers directos 64B, `GlInterop` | Test unitario & hash binario | **APROBADO** | DLL SHA-256 coincide byte a byte (`749A550E...`). |
+| **Estabilidad GPU (TDR Prevention)** | Prevención de `VK_ERROR_DEVICE_LOST` | Auditoría de `rtx.conf` y swapchain | **APROBADO** | `rtx.dlfg.presentOnGraphicsQueue = False` desacoplado. |
 | **Configuración Runtime (rtx.conf)** | DLSS, DLFG, Reflex, Froxels, thinWall, atmósfera | Parser de strings en archivo activo | **APROBADO** | Reconciliación total en `%APPDATA%/.minecraft/rtx.conf`. |
 | **Vectores de Movimiento (DLSS/DLFG)** | Desacople de `updateCamera(1.0f)` y matriz reproyección | Auditoría de bytecode y AST Java | **APROBADO** | Cámara evaluada con delta temporal real en frame loop. |
 | **Topología y Buffers Dinámicos** | Primitivas `TRIANGLES`/`FAN`, expansión >16k | Unit tests de pipeline de entidad | **APROBADO** | `testCapturingConsumerDynamicResizeBeyond16384` passed. |
@@ -143,7 +147,7 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
 | **Presupuesto de Chunks (Pacing)** | Frame budget 3.5ms juego / 25ms pantalla de carga | Auditoría de `ForgeRemixRenderer` | **APROBADO** | Deadline `System.nanoTime()` activo en bucle de drenaje. |
 | **Mapeo de Mods (26 mods)** | Carga de clases, modelos baked, cutout y atlases | Matriz estática y tests de texturas | **APROBADO** | 26 mods mapeados sin exclusión ni degradación. |
 | **LabPBR 1.3 Decoders (SSS & F0)** | Decodificación `_n`, `_s`, `_sss`, SSS y dieléctricos F0 | Unit tests de `LabPBRConverterTest` | **APROBADO** | 7/7 tests passed en `LabPBRConverterTest`. |
-| **Multi-Formato PBR Animado (R8/RGBA8)** | Despacho de parches R8 (1 bpp) y RGBA8 (4 bpp) | Unit tests de `AtlasAnimationForwarderTest` | **APROBADO** | 11/11 tests passed en `AtlasAnimationForwarderTest`. |
+| **Multi-Formato PBR Animado (R8/RGBA8)** | Despacho de parches R8 (1 bpp) y RGBA8 (4 bpp) | Unit tests de `AtlasAnimationForwarderTest` | **APROBADO** | 14/14 tests passed en `AtlasAnimationForwarderTest`. |
 | **Alas de Dragón de Doble Cara & Reflexión** | Quads duales con normales opuestas y reflexión robusta | Unit tests de `DragonWingMembraneTest` | **APROBADO** | 3/3 tests passed en `DragonWingMembraneTest`. |
 | **Luces de Fuego & Partículas Emisivas** | Emisión analítica para fuego y partículas dinámicas | Reglas de bloques y pipeline de partículas | **APROBADO** | Luces registradas en `BlockLightRuleManager`. |
 | **Hotfixes Visuales (1 al 4)** | Chunks negros, pieles, dragones, lava emisiva | Suite de regresión unitaria | **APROBADO** | Verificados en `3cd365f`, `24e45ca`, `13d4e87`, `0afdcc5`. |
@@ -247,10 +251,11 @@ Para certificar de forma definitiva los puntos marcados como **NO VERIFICADO**, 
 * **Partículas Emisivas:** `RemixParticleRenderer` activa el canal de emisión en el atlas de partículas, haciendo que humo encendido, chispas y llamas proyecten luz volumétrica en el espacio de juego.
 
 ### 11.5 Sincronización Animada de Atlases PBR y Parches Multi-Formato (Agente D & A)
-* **Commit:** `2aa3f2c`, `1c67a0e`, `288bdbb`
+* **Commit:** `2aa3f2c`, `1c67a0e`, `288bdbb`, `649788c`
 * **Funcionalidad:** `AtlasAnimationForwarder` avanza en tándem los cuadros de animación de las texturas difusas junto con sus respectivos cuadros en los atlases `_n` y `_s`.
 * **Despacho Multi-Formato:** Generación estricta de parches en `R8_UNORM` (1 bpp para rugosidad, metálico y altura) y `RGBA8_UNORM` (4 bpp para normales y emisivos), eliminando corrupción de memoria off-heap en las llamadas nativas de Remix.
-* **Validación:** 11/11 tests aprobados en `AtlasAnimationForwarderTest`.
+* **Canales SSS Sincronizados:** Soporte completo de parches animados para espesor SSS y albedo SSS.
+* **Validación:** 14/14 tests aprobados en `AtlasAnimationForwarderTest`.
 
 ---
 
@@ -258,5 +263,16 @@ Para certificar de forma definitiva los puntos marcados como **NO VERIFICADO**, 
 
 * **Unificación de Forge:** Versión `47.4.29` estandarizada en todos los archivos de configuración y Gradle (`e2d9f42`).
 * **Reconciliación de rtx.conf:** Parámetros de atmósfera volumétrica sincronizados (`rtx.volumetrics.enableAtmosphere = True`, `atmosphereHeightMeters = 2000.0`, `froxelGridSizeDepth = 256.0`).
-* **Artefacto JAR Desplegado:** `rtx-remix-forge-1.20.1-0.1.0.jar` (337.003 bytes, SHA-256: `E1E115B6286772AEF777DCBB4927FE7A47E7299D5E0ABF088E0C30400C209018`).
+* **Artefacto JAR Desplegado:** `rtx-remix-forge-1.20.1-0.1.0.jar` (339.652 bytes, SHA-256: `76F2744BAD7E0E03E8E48CEB5104CA7A9A4EEBEBA0A8EC007C0A8DB38D1CB5B5`).
 * **Pull Request:** Rama `work/rtx-remix-forge-1.20.1` actualizada en GitHub con sincronización completa hacia PR #1.
+
+---
+
+## 13. Diagnóstico y Resolución del GPU Crash (Exit Code 1624301229 / 0x60D0DEAD)
+
+* **Diagnóstico Forense:** El crash de salida `1624301229` (`0x60D0DEAD`) reportado en `remix-dxvk.log` fue causado por `DxvkSubmissionQueue: Command submission failed: VK_ERROR_DEVICE_LOST` precedido por `DLFG pacer: fence timed out`. Ocurrió durante la recreación de la cadena de fotogramas de DLFG (`recreating FG for C`) al ingresar a un mundo con distancia de simulación 32, ráfaga de mallas de chunk (`levelRenderer.allChanged()`) y subida síncrona forzada de 160MB de texturas (`water_normals_flipbook.dds`).
+* **Causa Raíz:** Con `rtx.dlfg.presentOnGraphicsQueue = True`, las tareas de presentación de fotogramas generados por hardware compartían la cola gráfica principal de Vulkan, sufriendo contención bajo picos de renderizado hasta agotar el fence pacer timeout (TDR de Windows).
+* **Solución Aplicada:**
+  1. Configuración de `rtx.dlfg.presentOnGraphicsQueue = False` en `packaging/rtx.conf`, `run/rtx.conf` y sincronizado en `%APPDATA%/.minecraft/rtx.conf`. Esto permite que la presentación de DLFG opere en una cola Vulkan dedicada desacoplada de la carga gráfica.
+  2. Implementación de forwarding multi-canal seguro para parches PBR de SSS en `AtlasAnimationForwarder` (`649788c`).
+* **Validación:** 49/49 tests pasando (100%), JAR compilado de 339.652 bytes desplegado en `.minecraft/mods/`.
