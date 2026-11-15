@@ -30,7 +30,9 @@ public final class ForgeRemixRenderer {
     private final com.nvidia.rtxremix.forge.sky.SkyRenderer skyRenderer = new com.nvidia.rtxremix.forge.sky.SkyRenderer();
     private final com.nvidia.rtxremix.forge.light.HeldLightManager heldLightManager = new com.nvidia.rtxremix.forge.light.HeldLightManager();
     private final com.nvidia.rtxremix.forge.logic.ConfLayerDriver confLayerDriver = new com.nvidia.rtxremix.forge.logic.ConfLayerDriver();
-    private final java.util.List<com.nvidia.rtxremix.forge.terrain.capture.BlockDataQueue.QueuedCapture> drainedCaptures = new java.util.ArrayList<>();
+    private static final long DEFAULT_INSTALL_BUDGET_NS = 3_500_000L; // 3.5ms frame-time pacing budget
+    private static final long INSTALL_BUDGET_NS = Long.getLong("rtxremix.chunk.installBudgetNs", DEFAULT_INSTALL_BUDGET_NS);
+
     private RemixAPI api;
     private GlInterop interop;
     private TextureOverlay overlay;
@@ -653,202 +655,8 @@ public final class ForgeRemixRenderer {
         try {
             updateTerrainMaterialIfReady();
 
-            // Drain captured block terrain data and submit to Remix
-            drainedCaptures.clear();
-            com.nvidia.rtxremix.forge.terrain.capture.BlockDataQueue.drain(drainedCaptures);
-            for (com.nvidia.rtxremix.forge.terrain.capture.BlockDataQueue.QueuedCapture capture : drainedCaptures) {
-                if (capture == null || capture.data() == null) continue;
-                SectionBlockData blockData = capture.data();
-                SectionMeshData meshData = blockData.meshData();
-                if (meshData == null) continue;
-
-                SectionPos pos = blockData.sectionPos();
-
-                // Clean up previous instances and meshes for this section
-                java.util.List<Long> oldInstances = sectionInstances.remove(pos);
-                if (oldInstances != null) {
-                    for (Long inst : oldInstances) {
-                        if (inst != null && inst != 0) {
-                            try { api.sceneInstanceRemove(inst); } catch (Exception ignored) {}
-                        }
-                    }
-                }
-                java.util.List<Long> oldMeshes = sectionMeshes.remove(pos);
-                if (oldMeshes != null) {
-                    for (Long m : oldMeshes) {
-                        if (m != null && m != 0) {
-                            try { api.destroyMesh(m); } catch (Exception ignored) {}
-                        }
-                    }
-                }
-                java.util.List<Long> oldLights = sectionLights.remove(pos);
-                if (oldLights != null) {
-                    for (Long l : oldLights) {
-                        if (l != null && l != 0) {
-                            try { api.destroyLight(l); } catch (Exception ignored) {}
-                        }
-                    }
-                }
-
-                try {
-                    if (!meshData.isEmpty()) {
-                        java.util.List<Long> newMeshes = new java.util.ArrayList<>();
-                        java.util.List<Long> newInstances = new java.util.ArrayList<>();
-                        Transform sectionTransform = new Transform();
-                        sectionTransform.setTranslation(pos.minBlockX(), pos.minBlockY(), pos.minBlockZ());
-
-                        for (SectionMeshData.Surface surface : meshData.surfaces()) {
-                            int vCount = surface.vertexCount();
-                            int iCount = surface.indexCount();
-                            if (vCount <= 0 || iCount <= 0) continue;
-
-                            java.nio.ByteBuffer vBuf = surface.vertexBuffer();
-                            java.nio.ByteBuffer iBuf = com.nvidia.rtxremix.forge.util.CanonicalIndexBuffer.getBuffer(iCount);
-                            try {
-                                long matHandle;
-                                long blendPNext;
-                                int categoryFlags = 0;
-                                if ("water".equals(surface.bucketKey())) {
-                                    matHandle = waterMaterial != 0 ? waterMaterial : defaultTerrainMaterial;
-                                    blendPNext = solidBlendPNext;
-                                } else if (surface.category() == SectionMeshData.CAT_OVERLAY) {
-                                    matHandle = cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial;
-                                    categoryFlags = InstanceCategoryBit.DECAL_STATIC;
-                                    blendPNext = overlayBlendPNext;
-                                } else if ("cutout_mipped".equals(surface.bucketKey())) {
-                                    matHandle = cutoutMippedTerrainMaterial != 0 ? cutoutMippedTerrainMaterial
-                                            : (cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial);
-                                    blendPNext = cutoutBlendPNext;
-                                } else if (surface.category() == SectionMeshData.CAT_CUTOUT) {
-                                    matHandle = cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial;
-                                    blendPNext = cutoutBlendPNext;
-                                } else if (surface.category() == SectionMeshData.CAT_TRANSLUCENT) {
-                                    matHandle = translucentTerrainMaterial != 0 ? translucentTerrainMaterial : defaultTerrainMaterial;
-                                    blendPNext = solidBlendPNext;
-                                } else {
-                                    matHandle = solidTerrainMaterial != 0 ? solidTerrainMaterial : defaultTerrainMaterial;
-                                    blendPNext = solidBlendPNext;
-                                }
-
-                                MeshInfoSurfaceTriangles surf = new MeshInfoSurfaceTriangles();
-                                surf.vertexBuffer = vBuf;
-                                surf.vertexCount = vCount;
-                                surf.indexBuffer = iBuf;
-                                surf.indexCount = iCount;
-                                surf.material = matHandle;
-                                surf.flags = com.nvidia.rtxremix.MeshInfoSurfaceTriangles.TEXCOORD_BOUNDS; // Enable texture atlas bounds clamping
-
-                                long hash = (((long) pos.asLong()) << 16)
-                                        ^ ((long) surface.bucketKey().hashCode() * 31L + surface.category())
-                                        ^ ((long) surface.contentHash() & 0xFFFFFFFFL);
-                                if (hash == 0) hash = 1L;
-                                MeshInfo mi = MeshInfo.builder()
-                                        .hash(hash)
-                                        .surfaces(surf)
-                                        .build();
-
-                                long mHandle = api.createMesh(mi);
-                                if (mHandle != 0) {
-                                    newMeshes.add(mHandle);
-                                    long instHandle = api.sceneInstanceAdd(mHandle, sectionTransform.matrix, categoryFlags, 1, blendPNext);
-                                    if (instHandle != 0) {
-                                        newInstances.add(instHandle);
-                                    }
-                                }
-                            } catch (Exception e) {
-                                LOGGER.error("Failed creating terrain mesh for section {}", pos, e);
-                            }
-                        }
-                        if (!newMeshes.isEmpty()) {
-                            sectionMeshes.put(pos, newMeshes);
-                        }
-                        if (!newInstances.isEmpty()) {
-                            sectionInstances.put(pos, newInstances);
-                        }
-                    }
-                } finally {
-                    meshData.release();
-                }
-
-                java.util.List<com.nvidia.rtxremix.forge.light.LightEntry> bLights = blockData.lights();
-                if (bLights != null && !bLights.isEmpty()) {
-                    java.util.List<Long> newLights = new java.util.ArrayList<>();
-                    for (com.nvidia.rtxremix.forge.light.LightEntry entry : bLights) {
-                        try {
-                            float r = entry.hasColor() ? entry.colorR() : 1.0f;
-                            float g = entry.hasColor() ? entry.colorG() : 0.85f;
-                            float b = entry.hasColor() ? entry.colorB() : 0.6f;
-                            float baseIntensity = entry.hasIntensity() ? entry.intensity() : (entry.lightLevel() * 12.0f);
-                            baseIntensity *= entry.authoredIntensityMultiplier();
-
-                            long lightHash = (((long) Double.doubleToLongBits(entry.x())) * 31L
-                                    + (long) Double.doubleToLongBits(entry.y())) * 31L
-                                    + (long) Double.doubleToLongBits(entry.z())
-                                    ^ ((long) entry.shape().ordinal() * 1000003L);
-                            if (lightHash == 0) lightHash = 1L;
-
-                            LightInfo.Builder lib = LightInfo.builder()
-                                    .hash(lightHash)
-                                    .radiance(r * baseIntensity, g * baseIntensity, b * baseIntensity);
-
-                            switch (entry.shape()) {
-                                case SPHERE -> {
-                                    LightInfoSphereEXT sphere = LightInfoSphereEXT.builder()
-                                            .position(entry.x(), entry.y(), entry.z())
-                                            .radius(entry.radius() > 0 ? entry.radius() : 0.05f)
-                                            .volumetricRadianceScale(entry.volumetricRadianceScale())
-                                            .build();
-                                    lib.sphereExt(sphere);
-                                }
-                                case CYLINDER -> {
-                                    LightInfoCylinderEXT cyl = LightInfoCylinderEXT.builder()
-                                            .position(entry.x(), entry.y(), entry.z())
-                                            .radius(entry.radius() > 0 ? entry.radius() : 0.05f)
-                                            .axis(entry.axisX(), entry.axisY(), entry.axisZ())
-                                            .axisLength(entry.axisLength())
-                                            .volumetricRadianceScale(entry.volumetricRadianceScale())
-                                            .build();
-                                    lib.cylinderExt(cyl);
-                                }
-                                case RECT -> {
-                                    LightInfoRectEXT rect = LightInfoRectEXT.builder()
-                                            .position(entry.x(), entry.y(), entry.z())
-                                            .xAxis(entry.xAxisX(), entry.xAxisY(), entry.xAxisZ())
-                                            .xSize(entry.xSize())
-                                            .yAxis(entry.yAxisX(), entry.yAxisY(), entry.yAxisZ())
-                                            .ySize(entry.ySize())
-                                            .direction(entry.directionX(), entry.directionY(), entry.directionZ())
-                                            .volumetricRadianceScale(entry.volumetricRadianceScale())
-                                            .build();
-                                    lib.rectExt(rect);
-                                }
-                                case DISK -> {
-                                    LightInfoDiskEXT disk = LightInfoDiskEXT.builder()
-                                            .position(entry.x(), entry.y(), entry.z())
-                                            .xAxis(entry.xAxisX(), entry.xAxisY(), entry.xAxisZ())
-                                            .xRadius(entry.xSize())
-                                            .yAxis(entry.yAxisX(), entry.yAxisY(), entry.yAxisZ())
-                                            .yRadius(entry.ySize())
-                                            .direction(entry.directionX(), entry.directionY(), entry.directionZ())
-                                            .volumetricRadianceScale(entry.volumetricRadianceScale())
-                                            .build();
-                                    lib.diskExt(disk);
-                                }
-                            }
-                            long lightHandle = api.createLight(lib.build());
-                            if (lightHandle != 0) {
-                                newLights.add(lightHandle);
-                            }
-                        } catch (Exception e) {
-                            LOGGER.debug("Failed creating block light at {},{},{}: {}", entry.x(), entry.y(), entry.z(), e.getMessage());
-                        }
-                    }
-                    if (!newLights.isEmpty()) {
-                        sectionLights.put(pos, newLights);
-                    }
-                }
-            }
-            drainedCaptures.clear();
+            // Progressively drain and install captured block terrain data within frame budget
+            installCompletedSections();
             reflagEvictedSections();
 
             // Finish entity pass and sweep off-screen shadow casters using the frame's interpolated partial ticks
@@ -947,6 +755,214 @@ public final class ForgeRemixRenderer {
             }
         } catch (Exception e) {
             LOGGER.error("Error submitting scene in RTX Remix: {}", e.getMessage(), e);
+        }
+    }
+
+    private void installCompletedSections() {
+        long startTime = System.nanoTime();
+        boolean loadingScreen = (client.screen instanceof net.minecraft.client.gui.screens.ReceivingLevelScreen);
+        long budget = loadingScreen ? 25_000_000L : INSTALL_BUDGET_NS;
+
+        com.nvidia.rtxremix.forge.terrain.capture.BlockDataQueue.QueuedCapture capture;
+        while ((capture = com.nvidia.rtxremix.forge.terrain.capture.BlockDataQueue.poll()) != null) {
+            installSection(capture);
+
+            if (!loadingScreen && (System.nanoTime() - startTime >= budget)) {
+                break;
+            }
+        }
+    }
+
+    private void installSection(com.nvidia.rtxremix.forge.terrain.capture.BlockDataQueue.QueuedCapture capture) {
+        if (capture == null || capture.data() == null) return;
+        SectionBlockData blockData = capture.data();
+        SectionMeshData meshData = blockData.meshData();
+        if (meshData == null) return;
+
+        SectionPos pos = blockData.sectionPos();
+
+        // Clean up previous instances and meshes for this section
+        java.util.List<Long> oldInstances = sectionInstances.remove(pos);
+        if (oldInstances != null) {
+            for (Long inst : oldInstances) {
+                if (inst != null && inst != 0) {
+                    try { api.sceneInstanceRemove(inst); } catch (Exception ignored) {}
+                }
+            }
+        }
+        java.util.List<Long> oldMeshes = sectionMeshes.remove(pos);
+        if (oldMeshes != null) {
+            for (Long m : oldMeshes) {
+                if (m != null && m != 0) {
+                    try { api.destroyMesh(m); } catch (Exception ignored) {}
+                }
+            }
+        }
+        java.util.List<Long> oldLights = sectionLights.remove(pos);
+        if (oldLights != null) {
+            for (Long l : oldLights) {
+                if (l != null && l != 0) {
+                    try { api.destroyLight(l); } catch (Exception ignored) {}
+                }
+            }
+        }
+
+        try {
+            if (!meshData.isEmpty()) {
+                java.util.List<Long> newMeshes = new java.util.ArrayList<>();
+                java.util.List<Long> newInstances = new java.util.ArrayList<>();
+                Transform sectionTransform = new Transform();
+                sectionTransform.setTranslation(pos.minBlockX(), pos.minBlockY(), pos.minBlockZ());
+
+                for (SectionMeshData.Surface surface : meshData.surfaces()) {
+                    int vCount = surface.vertexCount();
+                    int iCount = surface.indexCount();
+                    if (vCount <= 0 || iCount <= 0) continue;
+
+                    java.nio.ByteBuffer vBuf = surface.vertexBuffer();
+                    java.nio.ByteBuffer iBuf = com.nvidia.rtxremix.forge.util.CanonicalIndexBuffer.getBuffer(iCount);
+                    try {
+                        long matHandle;
+                        long blendPNext;
+                        int categoryFlags = 0;
+                        if ("water".equals(surface.bucketKey())) {
+                            matHandle = waterMaterial != 0 ? waterMaterial : defaultTerrainMaterial;
+                            blendPNext = solidBlendPNext;
+                        } else if (surface.category() == SectionMeshData.CAT_OVERLAY) {
+                            matHandle = cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial;
+                            categoryFlags = InstanceCategoryBit.DECAL_STATIC;
+                            blendPNext = overlayBlendPNext;
+                        } else if ("cutout_mipped".equals(surface.bucketKey())) {
+                            matHandle = cutoutMippedTerrainMaterial != 0 ? cutoutMippedTerrainMaterial
+                                    : (cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial);
+                            blendPNext = cutoutBlendPNext;
+                        } else if (surface.category() == SectionMeshData.CAT_CUTOUT) {
+                            matHandle = cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial;
+                            blendPNext = cutoutBlendPNext;
+                        } else if (surface.category() == SectionMeshData.CAT_TRANSLUCENT) {
+                            matHandle = translucentTerrainMaterial != 0 ? translucentTerrainMaterial : defaultTerrainMaterial;
+                            blendPNext = solidBlendPNext;
+                        } else {
+                            matHandle = solidTerrainMaterial != 0 ? solidTerrainMaterial : defaultTerrainMaterial;
+                            blendPNext = solidBlendPNext;
+                        }
+
+                        MeshInfoSurfaceTriangles surf = new MeshInfoSurfaceTriangles();
+                        surf.vertexBuffer = vBuf;
+                        surf.vertexCount = vCount;
+                        surf.indexBuffer = iBuf;
+                        surf.indexCount = iCount;
+                        surf.material = matHandle;
+                        surf.flags = com.nvidia.rtxremix.MeshInfoSurfaceTriangles.TEXCOORD_BOUNDS; // Enable texture atlas bounds clamping
+
+                        long hash = (((long) pos.asLong()) << 16)
+                                ^ ((long) surface.bucketKey().hashCode() * 31L + surface.category())
+                                ^ ((long) surface.contentHash() & 0xFFFFFFFFL);
+                        if (hash == 0) hash = 1L;
+                        MeshInfo mi = MeshInfo.builder()
+                                .hash(hash)
+                                .surfaces(surf)
+                                .build();
+
+                        long mHandle = api.createMesh(mi);
+                        if (mHandle != 0) {
+                            newMeshes.add(mHandle);
+                            long instHandle = api.sceneInstanceAdd(mHandle, sectionTransform.matrix, categoryFlags, 1, blendPNext);
+                            if (instHandle != 0) {
+                                newInstances.add(instHandle);
+                            }
+                        }
+                    } catch (Exception e) {
+                        LOGGER.error("Failed creating terrain mesh for section {}", pos, e);
+                    }
+                }
+                if (!newMeshes.isEmpty()) {
+                    sectionMeshes.put(pos, newMeshes);
+                }
+                if (!newInstances.isEmpty()) {
+                    sectionInstances.put(pos, newInstances);
+                }
+            }
+        } finally {
+            meshData.release();
+        }
+
+        java.util.List<com.nvidia.rtxremix.forge.light.LightEntry> bLights = blockData.lights();
+        if (bLights != null && !bLights.isEmpty()) {
+            java.util.List<Long> newLights = new java.util.ArrayList<>();
+            for (com.nvidia.rtxremix.forge.light.LightEntry entry : bLights) {
+                try {
+                    float r = entry.hasColor() ? entry.colorR() : 1.0f;
+                    float g = entry.hasColor() ? entry.colorG() : 0.85f;
+                    float b = entry.hasColor() ? entry.colorB() : 0.6f;
+                    float baseIntensity = entry.hasIntensity() ? entry.intensity() : (entry.lightLevel() * 12.0f);
+                    baseIntensity *= entry.authoredIntensityMultiplier();
+
+                    long lightHash = (((long) Double.doubleToLongBits(entry.x())) * 31L
+                            + (long) Double.doubleToLongBits(entry.y())) * 31L
+                            + (long) Double.doubleToLongBits(entry.z())
+                            ^ ((long) entry.shape().ordinal() * 1000003L);
+                    if (lightHash == 0) lightHash = 1L;
+
+                    LightInfo.Builder lib = LightInfo.builder()
+                            .hash(lightHash)
+                            .radiance(r * baseIntensity, g * baseIntensity, b * baseIntensity);
+
+                    switch (entry.shape()) {
+                        case SPHERE -> {
+                            LightInfoSphereEXT sphere = LightInfoSphereEXT.builder()
+                                    .position(entry.x(), entry.y(), entry.z())
+                                    .radius(entry.radius() > 0 ? entry.radius() : 0.05f)
+                                    .volumetricRadianceScale(entry.volumetricRadianceScale())
+                                    .build();
+                            lib.sphereExt(sphere);
+                        }
+                        case CYLINDER -> {
+                            LightInfoCylinderEXT cyl = LightInfoCylinderEXT.builder()
+                                    .position(entry.x(), entry.y(), entry.z())
+                                    .radius(entry.radius() > 0 ? entry.radius() : 0.05f)
+                                    .axis(entry.axisX(), entry.axisY(), entry.axisZ())
+                                    .axisLength(entry.axisLength())
+                                    .volumetricRadianceScale(entry.volumetricRadianceScale())
+                                    .build();
+                            lib.cylinderExt(cyl);
+                        }
+                        case RECT -> {
+                            LightInfoRectEXT rect = LightInfoRectEXT.builder()
+                                    .position(entry.x(), entry.y(), entry.z())
+                                    .xAxis(entry.xAxisX(), entry.xAxisY(), entry.xAxisZ())
+                                    .xSize(entry.xSize())
+                                    .yAxis(entry.yAxisX(), entry.yAxisY(), entry.yAxisZ())
+                                    .ySize(entry.ySize())
+                                    .direction(entry.directionX(), entry.directionY(), entry.directionZ())
+                                    .volumetricRadianceScale(entry.volumetricRadianceScale())
+                                    .build();
+                            lib.rectExt(rect);
+                        }
+                        case DISK -> {
+                            LightInfoDiskEXT disk = LightInfoDiskEXT.builder()
+                                    .position(entry.x(), entry.y(), entry.z())
+                                    .xAxis(entry.xAxisX(), entry.xAxisY(), entry.xAxisZ())
+                                    .xRadius(entry.xSize())
+                                    .yAxis(entry.yAxisX(), entry.yAxisY(), entry.yAxisZ())
+                                    .yRadius(entry.ySize())
+                                    .direction(entry.directionX(), entry.directionY(), entry.directionZ())
+                                    .volumetricRadianceScale(entry.volumetricRadianceScale())
+                                    .build();
+                            lib.diskExt(disk);
+                        }
+                    }
+                    long lightHandle = api.createLight(lib.build());
+                    if (lightHandle != 0) {
+                        newLights.add(lightHandle);
+                    }
+                } catch (Exception e) {
+                    LOGGER.debug("Failed creating block light at {},{},{}: {}", entry.x(), entry.y(), entry.z(), e.getMessage());
+                }
+            }
+            if (!newLights.isEmpty()) {
+                sectionLights.put(pos, newLights);
+            }
         }
     }
 

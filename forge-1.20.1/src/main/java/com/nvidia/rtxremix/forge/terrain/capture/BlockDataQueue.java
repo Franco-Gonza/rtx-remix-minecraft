@@ -185,6 +185,31 @@ public final class BlockDataQueue {
         return outputCount;
     }
 
+    /**
+     * Polls the next current section capture from the queue, discarding any obsolete ones.
+     * Returns null when no captures remain.
+     */
+    public static QueuedCapture poll() {
+        QueueState state = STATE.get();
+        while (true) {
+            QueuedSectionData next = state.queue.poll();
+            if (next == null) {
+                return null;
+            }
+
+            state.pendingItems.decrementAndGet();
+            state.pendingBytes.addAndGet(-next.bytes);
+            releaseCapacity(state, next.bytes);
+            state.signalCapacityWaiters();
+
+            if (isCurrent(next.capture)) {
+                return next.capture;
+            } else {
+                releaseMeshData(next.capture.data());
+            }
+        }
+    }
+
     public static void clear() {
         QueueState retired = STATE.getAndSet(new QueueState(allocateQueueGeneration()));
         retired.close();
