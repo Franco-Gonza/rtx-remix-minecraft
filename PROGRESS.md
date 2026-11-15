@@ -36,6 +36,7 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
 
 ## 3. Historial Reciente de Commits Git
 
+* `130c2c4` - `fix(forge): align camera motion vectors for dlss/fg and propagate reflex runtime config`
 * `f75f4c6` - `docs(qa): initialize goal mandate and progress tracking baseline`
 * `a70b243` - `fix(forge): resolve bookofdragons species textures and fallback untextured layers for entity capture`
 * `0b9786b` - `fix(forge): enable thinWall on translucent glass for dual-interface Fresnel reflections`
@@ -65,9 +66,9 @@ La Fase 1 de Auditoría ha concluido con la identificación exhaustiva de defect
   4. Luz rectangular ambiente saturando y lavando el volumen de froxels.
   5. Recreación continua de la fuente de luz solar destruyendo la acumulación de reservorios ReSTIR temporalmente.
 
-### C. Agente C — DLSS y Frame Generation (DEFECTOS CRÍTICOS IDENTIFICADOS)
-* **DLFG Inactivo:** Directiva de Frame Generation inactiva en `run/rtx.conf`.
-* **Desincronización de Vectores de Movimiento:** `ForgeRemixRenderer.updateCamera(1.0f)` evalúa la cámara con tick parcial fijo en `1.0f` en vez del delta real entre fotogramas, desfasando la reproyección temporal de DLSS y DLFG.
+### C. Agente C — DLSS y Frame Generation (DEFECTOS CORREGIDOS / FASE 2 COMPLETADA)
+* **DLFG y Reflex Propagados:** Directivas `rtx.dlfg.enable = True`, `rtx.dlfg.presentOnGraphicsQueue = True`, `rtx.qualityDLSS = 3` y `rtx.reflex.mode = 2` propagadas y fusionadas automáticamente por `ForgeNativeExtractor` en `packaging/rtx.conf`, `run/rtx.conf` y `%APPDATA%/.minecraft/rtx.conf`.
+* **Sincronización de Vectores de Movimiento:** Eliminada la llamada redundante `updateCamera(1.0f)` dentro de `submitScene()`. La cámara preserva su matriz de fotograma previo ($M_{prev}$) íntegra y se evalúan entidades/partículas con `lastPartialTicks`, habilitando vectores de movimiento subpíxel precisos para DLSS y DLFG sin ghosting temporal.
 
 ### D. Agente D — Compatibilidad de Mods (DEFECTOS CRÍTICOS IDENTIFICADOS)
 * **Descarte de Geometría en Primitivas TRIANGLES:** Descarte sistemático de quads/triángulos en primitivas `GL_TRIANGLES` afectando rayos y lásers de Alex's Caves.
@@ -86,7 +87,7 @@ La Fase 1 de Auditoría ha concluido con la identificación exhaustiva de defect
 | Defecto / Causa Raíz | Dominio | Severidad | Agente Asignado |
 | :--- | :--- | :---: | :---: |
 | Corregir `rtx.volumetrics.enable`, sintaxis `256.f;`, coeficientes de scattering, luz ambiente y persistencia solar ReSTIR | Path Tracing / Froxels | Bloqueante | **AGENTE B** |
-| Activar DLFG en `run/rtx.conf` y corregir cálculo de motion vectors en `updateCamera` con tick delta real | DLSS / DLFG / Reflex | Bloqueante | **AGENTE C** |
+| Activar DLFG en `run/rtx.conf` y corregir cálculo de motion vectors en `updateCamera` con tick delta real | DLSS / DLFG / Reflex | Corregido | **AGENTE C** |
 | Soporte para primitivas `TRIANGLES`, ampliación de buffer de 16k vértices y resolución de `RenderType` custom | Compatibilidad Mods | Alta | **AGENTE D** |
 | Eliminar hash aleatorio en `RemixEntitySubmitter`, presupuestar drenaje de chunks y limpiar alocaciones en `DirectQuadWriter` | Rendimiento / BLAS | Alta | **AGENTE E** |
 | Regresiones automatizadas, verificación de estabilidad y validación de escenarios a 3440x1417 / 16 chunks | QA & Regresiones | Continua | **AGENTE F** |
