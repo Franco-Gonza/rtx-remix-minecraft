@@ -474,6 +474,7 @@ public final class ForgeRemixRenderer {
                             .refractiveIndex(1.5f)
                             .transmittanceColor(0.97f, 0.97f, 0.97f)
                             .transmittanceMeasurementDistance(0.35f)
+                            .thinWall(0.01f)
                             .useDiffuseLayer(true)
                             .build();
                     MaterialInfo transInfo = MaterialInfo.builder()
