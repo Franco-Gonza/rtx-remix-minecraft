@@ -494,12 +494,12 @@ public final class ForgeRemixRenderer {
 
                     // Register auxiliary sidecar PBR atlases for synchronized animation updates
                     com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.clearSidecarAtlases();
-                    if (terrainNormalTexture != 0) com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.registerSidecarAtlas(terrainNormalTexture);
-                    if (terrainRoughnessTexture != 0) com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.registerSidecarAtlas(terrainRoughnessTexture);
-                    if (terrainMetallicTexture != 0) com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.registerSidecarAtlas(terrainMetallicTexture);
-                    if (terrainEmissiveTexture != 0) com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.registerSidecarAtlas(terrainEmissiveTexture);
-                    if (terrainSssTexture != 0) com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.registerSidecarAtlas(terrainSssTexture);
-                    if (terrainSssAlbedoTexture != 0) com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.registerSidecarAtlas(terrainSssAlbedoTexture);
+                    if (terrainNormalTexture != 0) com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.registerPbrAtlas(terrainNormalTexture, com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.PbrChannel.NORMAL);
+                    if (terrainHeightTexture != 0) com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.registerPbrAtlas(terrainHeightTexture, com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.PbrChannel.HEIGHT);
+                    if (terrainRoughnessTexture != 0) com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.registerPbrAtlas(terrainRoughnessTexture, com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.PbrChannel.ROUGHNESS);
+                    if (terrainMetallicTexture != 0) com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.registerPbrAtlas(terrainMetallicTexture, com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.PbrChannel.METALLIC);
+                    if (terrainEmissiveTexture != 0) com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.registerPbrAtlas(terrainEmissiveTexture, com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.PbrChannel.EMISSIVE);
+                    if (terrainSssTexture != 0) com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.registerPbrAtlas(terrainSssTexture, com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.PbrChannel.SSS);
 
                     // 1. Solid terrain material (opaque block atlas with PBR binding)
                     MaterialInfoOpaqueEXT.Builder solidOpaque = MaterialInfoOpaqueEXT.builder()

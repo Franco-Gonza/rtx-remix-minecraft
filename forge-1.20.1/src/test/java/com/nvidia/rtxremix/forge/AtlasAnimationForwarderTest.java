@@ -175,4 +175,103 @@ public class AtlasAnimationForwarderTest {
         AtlasAnimationForwarder.clear();
         AtlasAnimationForwarder.clearSidecarAtlases();
     }
+
+    @Test
+    void testPbrChannelDefinitionsAndRegistration() {
+        assertEquals(com.nvidia.rtxremix.TextureFormat.RGBA8_UNORM, AtlasAnimationForwarder.PbrChannel.NORMAL.format);
+        assertEquals(4, AtlasAnimationForwarder.PbrChannel.NORMAL.bytesPerPixel);
+
+        assertEquals(com.nvidia.rtxremix.TextureFormat.R8_UNORM, AtlasAnimationForwarder.PbrChannel.HEIGHT.format);
+        assertEquals(1, AtlasAnimationForwarder.PbrChannel.HEIGHT.bytesPerPixel);
+
+        assertEquals(com.nvidia.rtxremix.TextureFormat.R8_UNORM, AtlasAnimationForwarder.PbrChannel.ROUGHNESS.format);
+        assertEquals(1, AtlasAnimationForwarder.PbrChannel.ROUGHNESS.bytesPerPixel);
+
+        assertEquals(com.nvidia.rtxremix.TextureFormat.R8_UNORM, AtlasAnimationForwarder.PbrChannel.METALLIC.format);
+        assertEquals(1, AtlasAnimationForwarder.PbrChannel.METALLIC.bytesPerPixel);
+
+        assertEquals(com.nvidia.rtxremix.TextureFormat.RGBA8_UNORM, AtlasAnimationForwarder.PbrChannel.EMISSIVE.format);
+        assertEquals(4, AtlasAnimationForwarder.PbrChannel.EMISSIVE.bytesPerPixel);
+
+        assertEquals(com.nvidia.rtxremix.TextureFormat.RGBA8_UNORM, AtlasAnimationForwarder.PbrChannel.SSS.format);
+        assertEquals(4, AtlasAnimationForwarder.PbrChannel.SSS.bytesPerPixel);
+
+        AtlasAnimationForwarder.clearSidecarAtlases();
+        AtlasAnimationForwarder.registerPbrAtlas(0x3001L, AtlasAnimationForwarder.PbrChannel.NORMAL);
+        AtlasAnimationForwarder.registerPbrAtlas(0x3002L, AtlasAnimationForwarder.PbrChannel.ROUGHNESS);
+        AtlasAnimationForwarder.registerPbrAtlas(0x3003L, AtlasAnimationForwarder.PbrChannel.METALLIC);
+
+        assertEquals(0x3001L, AtlasAnimationForwarder.getPbrAtlas(AtlasAnimationForwarder.PbrChannel.NORMAL));
+        assertEquals(0x3002L, AtlasAnimationForwarder.getPbrAtlas(AtlasAnimationForwarder.PbrChannel.ROUGHNESS));
+        assertEquals(0x3003L, AtlasAnimationForwarder.getPbrAtlas(AtlasAnimationForwarder.PbrChannel.METALLIC));
+        assertNull(AtlasAnimationForwarder.getPbrAtlas(AtlasAnimationForwarder.PbrChannel.HEIGHT));
+
+        AtlasAnimationForwarder.clearSidecarAtlases();
+        assertNull(AtlasAnimationForwarder.getPbrAtlas(AtlasAnimationForwarder.PbrChannel.NORMAL));
+    }
+
+    @Test
+    void testMultiFormatBatchEntryR8VsRGBA8RowPitch() {
+        long fakeBase = 0x200000L;
+
+        // 1. Valid R8 patch: 16x16, rowPitch = 16 (1 byte per pixel for R8)
+        AtlasAnimationForwarder.PendingPatch r8Patch = new AtlasAnimationForwarder.PendingPatch(
+                10, 20, 2, 4, 16, 16, 32, 64, fakeBase, 16);
+        TextureBatchEntry r8Entry = AtlasAnimationForwarder.buildBatchEntry(
+                1L, List.of(r8Patch), com.nvidia.rtxremix.TextureFormat.R8_UNORM);
+        assertNotNull(r8Entry);
+        assertEquals(1, r8Entry.patches.length);
+        assertEquals(com.nvidia.rtxremix.TextureFormat.R8_UNORM, r8Entry.patches[0].format);
+        assertEquals(16, r8Entry.patches[0].rowPitch);
+        // Required bytes for R8: (16 - 1) * 16 + 16 * 1 = 240 + 16 = 256
+        assertEquals(256, r8Entry.patches[0].pixelData.capacity());
+        // Offset for R8: fakeBase + 4 * 16 + 2 * 1 = fakeBase + 64 + 2 = fakeBase + 66
+        assertEquals(fakeBase + 66L, MemoryUtil.memAddress(r8Entry.patches[0].pixelData));
+
+        // 2. Invalid R8 patch: rowPitch = 15 (< width * 1) -> rejected
+        AtlasAnimationForwarder.PendingPatch badR8Pitch = new AtlasAnimationForwarder.PendingPatch(
+                10, 20, 2, 4, 16, 16, 32, 64, fakeBase, 15);
+        assertNull(AtlasAnimationForwarder.buildBatchEntry(
+                1L, List.of(badR8Pitch), com.nvidia.rtxremix.TextureFormat.R8_UNORM));
+
+        // 3. Valid RGBA8 patch: 16x16, rowPitch = 64 (4 bytes per pixel)
+        AtlasAnimationForwarder.PendingPatch rgbaPatch = new AtlasAnimationForwarder.PendingPatch(
+                10, 20, 2, 4, 16, 16, 32, 64, fakeBase, 64);
+        TextureBatchEntry rgbaEntry = AtlasAnimationForwarder.buildBatchEntry(
+                1L, List.of(rgbaPatch), com.nvidia.rtxremix.TextureFormat.RGBA8_UNORM);
+        assertNotNull(rgbaEntry);
+        assertEquals(com.nvidia.rtxremix.TextureFormat.RGBA8_UNORM, rgbaEntry.patches[0].format);
+        assertEquals(64, rgbaEntry.patches[0].rowPitch);
+        // Required bytes for RGBA8: (16 - 1) * 64 + 16 * 4 = 960 + 64 = 1024
+        assertEquals(1024, rgbaEntry.patches[0].pixelData.capacity());
+        // Offset for RGBA8: fakeBase + 4 * 64 + 2 * 4 = fakeBase + 256 + 8 = fakeBase + 264
+        assertEquals(fakeBase + 264L, MemoryUtil.memAddress(rgbaEntry.patches[0].pixelData));
+
+        // 4. Invalid RGBA8 patch: rowPitch = 63 (< width * 4) -> rejected
+        AtlasAnimationForwarder.PendingPatch badRgbaPitch = new AtlasAnimationForwarder.PendingPatch(
+                10, 20, 2, 4, 16, 16, 32, 64, fakeBase, 63);
+        assertNull(AtlasAnimationForwarder.buildBatchEntry(
+                1L, List.of(badRgbaPitch), com.nvidia.rtxremix.TextureFormat.RGBA8_UNORM));
+    }
+
+    @Test
+    void testDirectBufferLifecycleSafety() {
+        // DirectBufferPool acquire and release verification
+        java.nio.ByteBuffer buf = com.nvidia.rtxremix.forge.util.DirectBufferPool.acquire(1024);
+        assertNotNull(buf);
+        assertTrue(buf.isDirect());
+        assertEquals(0, buf.position());
+
+        // Safe release back to pool
+        com.nvidia.rtxremix.forge.util.DirectBufferPool.release(buf);
+
+        // Multiple acquire/release cycle
+        java.util.List<java.nio.ByteBuffer> buffers = new java.util.ArrayList<>();
+        for (int i = 0; i < 8; i++) {
+            buffers.add(com.nvidia.rtxremix.forge.util.DirectBufferPool.acquire(256));
+        }
+        for (java.nio.ByteBuffer b : buffers) {
+            com.nvidia.rtxremix.forge.util.DirectBufferPool.release(b);
+        }
+    }
 }

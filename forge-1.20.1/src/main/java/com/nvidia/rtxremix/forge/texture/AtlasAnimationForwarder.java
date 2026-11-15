@@ -185,68 +185,232 @@ public final class AtlasAnimationForwarder {
             return;
         }
 
-        int entryCount = 0;
-        TextureBatchEntry bEntry = null;
-        TextureBatchEntry pEntry = null;
-        List<TextureBatchEntry> sidecarEntries = null;
+        if ((blockAtlasHandle == 0 || pendingBlockPatches.isEmpty()) &&
+            (particleAtlasHandle == 0 || pendingParticlePatches.isEmpty())) {
+            clear();
+            return;
+        }
 
-        if (blockAtlasHandle != 0 && !pendingBlockPatches.isEmpty()) {
-            bEntry = buildBatchEntry(blockAtlasHandle, pendingBlockPatches, blockPatchesBuffer, blockBatchEntry);
-            if (bEntry != null) {
-                entryCount++;
+        List<ByteBuffer> ownedBuffers = new ArrayList<>(pendingBlockPatches.size() * 6);
+
+        try {
+            List<TextureBatchEntry> entries = new ArrayList<>(8);
+
+            // Process Block Atlas & PBR Channels
+            if (blockAtlasHandle != 0 && !pendingBlockPatches.isEmpty()) {
+                int patchCount = pendingBlockPatches.size();
+
+                List<TexturePatch> albedoPatches = new ArrayList<>(patchCount);
+                List<TexturePatch> normalPatches = new ArrayList<>(patchCount);
+                List<TexturePatch> heightPatches = new ArrayList<>(patchCount);
+                List<TexturePatch> roughnessPatches = new ArrayList<>(patchCount);
+                List<TexturePatch> metallicPatches = new ArrayList<>(patchCount);
+                List<TexturePatch> emissivePatches = new ArrayList<>(patchCount);
+
+                Long normalHandle = pbrAtlases.get(PbrChannel.NORMAL);
+                Long heightHandle = pbrAtlases.get(PbrChannel.HEIGHT);
+                Long roughnessHandle = pbrAtlases.get(PbrChannel.ROUGHNESS);
+                Long metallicHandle = pbrAtlases.get(PbrChannel.METALLIC);
+                Long emissiveHandle = pbrAtlases.get(PbrChannel.EMISSIVE);
+
+                for (int i = 0; i < patchCount; i++) {
+                    PendingPatch p = pendingBlockPatches.get(i);
+                    if (p.width <= 0 || p.height <= 0 || p.pixelPtr == 0) continue;
+                    if (p.dstX < 0 || p.dstY < 0) continue;
+                    if (p.width > 65535 || p.height > 65535) continue;
+                    if (p.rowPitch < p.width * 4) continue;
+                    if (p.srcX < 0 || p.srcY < 0) continue;
+                    if ((long) p.srcX + (long) p.width > (long) p.srcImageWidth ||
+                        (long) p.srcY + (long) p.height > (long) p.srcImageHeight) {
+                        continue;
+                    }
+
+                    int patchBytesRGBA = p.width * p.height * 4;
+                    int patchBytesR8 = p.width * p.height;
+                    ByteBuffer srcBuf = MemoryUtil.memByteBuffer(p.pixelPtr, p.rowPitch * p.srcImageHeight);
+
+                    BlockTextureManager.AnimatedSpriteLabPBR pbr =
+                            (p.spriteId != null) ? labPbrMap.get(p.spriteId) : null;
+
+                    // 1. Albedo Patch (with AO if available)
+                    ByteBuffer albedoBuf = DirectBufferPool.acquire(patchBytesRGBA);
+                    ownedBuffers.add(albedoBuf);
+                    if (pbr != null && pbr.aoTable != null) {
+                        LabPBRConverter.applyAOToPatch(albedoBuf, srcBuf, p.rowPitch,
+                                pbr.aoTable, pbr.nW, pbr.nH, p.srcX, p.srcY, p.width, p.height);
+                    } else {
+                        LabPBRConverter.copyAlbedoPatch(albedoBuf, srcBuf, p.rowPitch, p.srcX, p.srcY, p.width, p.height);
+                    }
+                    albedoBuf.flip();
+                    albedoPatches.add(createPatch(p.dstX, p.dstY, p.width, p.height, albedoBuf, p.width * 4, TextureFormat.RGBA8_UNORM));
+
+                    // 2. Normal Patch (RGBA8)
+                    if (normalHandle != null && normalHandle != 0) {
+                        ByteBuffer normalBuf = DirectBufferPool.acquire(patchBytesRGBA);
+                        ownedBuffers.add(normalBuf);
+                        if (pbr != null && pbr.normalTable != null) {
+                            LabPBRConverter.copyNormalPatch(normalBuf, pbr.normalTable, pbr.nW, pbr.nH, p.srcX, p.srcY, p.width, p.height);
+                        } else {
+                            LabPBRConverter.fillFlatNormalPatch(normalBuf, p.width, p.height);
+                        }
+                        normalBuf.flip();
+                        normalPatches.add(createPatch(p.dstX, p.dstY, p.width, p.height, normalBuf, p.width * 4, TextureFormat.RGBA8_UNORM));
+                    }
+
+                    // 3. Height Patch (R8)
+                    if (heightHandle != null && heightHandle != 0) {
+                        ByteBuffer heightBuf = DirectBufferPool.acquire(patchBytesR8);
+                        ownedBuffers.add(heightBuf);
+                        if (pbr != null && pbr.heightTable != null) {
+                            LabPBRConverter.copyR8Patch(heightBuf, pbr.heightTable, pbr.nW, pbr.nH, p.srcX, p.srcY, p.width, p.height);
+                        } else {
+                            LabPBRConverter.fillR8Patch(heightBuf, (byte) 255, p.width, p.height);
+                        }
+                        heightBuf.flip();
+                        heightPatches.add(createPatch(p.dstX, p.dstY, p.width, p.height, heightBuf, p.width, TextureFormat.R8_UNORM));
+                    }
+
+                    // 4. Roughness Patch (R8)
+                    if (roughnessHandle != null && roughnessHandle != 0) {
+                        ByteBuffer roughnessBuf = DirectBufferPool.acquire(patchBytesR8);
+                        ownedBuffers.add(roughnessBuf);
+                        if (pbr != null && pbr.sRoughnessTable != null) {
+                            LabPBRConverter.copyR8Patch(roughnessBuf, pbr.sRoughnessTable, pbr.sW, pbr.sH, p.srcX, p.srcY, p.width, p.height);
+                        } else {
+                            LabPBRConverter.fillR8Patch(roughnessBuf, (byte) 204, p.width, p.height);
+                        }
+                        roughnessBuf.flip();
+                        roughnessPatches.add(createPatch(p.dstX, p.dstY, p.width, p.height, roughnessBuf, p.width, TextureFormat.R8_UNORM));
+                    }
+
+                    // 5. Metallic Patch (R8)
+                    if (metallicHandle != null && metallicHandle != 0) {
+                        ByteBuffer metallicBuf = DirectBufferPool.acquire(patchBytesR8);
+                        ownedBuffers.add(metallicBuf);
+                        if (pbr != null && pbr.sMetallicTable != null) {
+                            LabPBRConverter.copyR8Patch(metallicBuf, pbr.sMetallicTable, pbr.sW, pbr.sH, p.srcX, p.srcY, p.width, p.height);
+                        } else {
+                            LabPBRConverter.fillR8Patch(metallicBuf, (byte) 0, p.width, p.height);
+                        }
+                        metallicBuf.flip();
+                        metallicPatches.add(createPatch(p.dstX, p.dstY, p.width, p.height, metallicBuf, p.width, TextureFormat.R8_UNORM));
+                    }
+
+                    // 6. Emissive Patch (RGBA8)
+                    if (emissiveHandle != null && emissiveHandle != 0) {
+                        ByteBuffer emissiveBuf = DirectBufferPool.acquire(patchBytesRGBA);
+                        ownedBuffers.add(emissiveBuf);
+                        boolean isLavaOrFire = p.spriteId != null && (p.spriteId.getPath().contains("lava") || p.spriteId.getPath().contains("fire"));
+                        if (pbr != null && pbr.hasEmissive && pbr.sAlphaTable != null) {
+                            LabPBRConverter.buildEmissivePatch(emissiveBuf, srcBuf, p.rowPitch, pbr.sAlphaTable, pbr.sW, pbr.sH, p.srcX, p.srcY, p.width, p.height);
+                        } else if (isLavaOrFire) {
+                            LabPBRConverter.copyAlbedoPatch(emissiveBuf, srcBuf, p.rowPitch, p.srcX, p.srcY, p.width, p.height);
+                        } else {
+                            LabPBRConverter.fillZeroRGBA8(emissiveBuf, p.width, p.height);
+                        }
+                        emissiveBuf.flip();
+                        emissivePatches.add(createPatch(p.dstX, p.dstY, p.width, p.height, emissiveBuf, p.width * 4, TextureFormat.RGBA8_UNORM));
+                    }
+                }
+
+                if (!albedoPatches.isEmpty()) {
+                    TextureBatchEntry be = new TextureBatchEntry();
+                    be.handle = blockAtlasHandle;
+                    be.patches = albedoPatches.toArray(new TexturePatch[0]);
+                    entries.add(be);
+                }
+                if (normalHandle != null && normalHandle != 0 && !normalPatches.isEmpty()) {
+                    TextureBatchEntry ne = new TextureBatchEntry();
+                    ne.handle = normalHandle;
+                    ne.patches = normalPatches.toArray(new TexturePatch[0]);
+                    entries.add(ne);
+                }
+                if (heightHandle != null && heightHandle != 0 && !heightPatches.isEmpty()) {
+                    TextureBatchEntry he = new TextureBatchEntry();
+                    he.handle = heightHandle;
+                    he.patches = heightPatches.toArray(new TexturePatch[0]);
+                    entries.add(he);
+                }
+                if (roughnessHandle != null && roughnessHandle != 0 && !roughnessPatches.isEmpty()) {
+                    TextureBatchEntry re = new TextureBatchEntry();
+                    re.handle = roughnessHandle;
+                    re.patches = roughnessPatches.toArray(new TexturePatch[0]);
+                    entries.add(re);
+                }
+                if (metallicHandle != null && metallicHandle != 0 && !metallicPatches.isEmpty()) {
+                    TextureBatchEntry me = new TextureBatchEntry();
+                    me.handle = metallicHandle;
+                    me.patches = metallicPatches.toArray(new TexturePatch[0]);
+                    entries.add(me);
+                }
+                if (emissiveHandle != null && emissiveHandle != 0 && !emissivePatches.isEmpty()) {
+                    TextureBatchEntry ee = new TextureBatchEntry();
+                    ee.handle = emissiveHandle;
+                    ee.patches = emissivePatches.toArray(new TexturePatch[0]);
+                    entries.add(ee);
+                }
+
+                // Legacy sidecar atlases backward compatibility
                 if (!sidecarPbrAtlases.isEmpty()) {
-                    sidecarEntries = new ArrayList<>(sidecarPbrAtlases.size());
                     for (int i = 0; i < sidecarPbrAtlases.size(); i++) {
                         long sHandle = sidecarPbrAtlases.get(i);
-                        if (sHandle != 0) {
-                            TextureBatchEntry sEntry = buildBatchEntry(sHandle, pendingBlockPatches, new ArrayList<>(pendingBlockPatches.size()), new TextureBatchEntry());
+                        if (sHandle != 0 && sHandle != normalHandle && sHandle != roughnessHandle
+                                && sHandle != metallicHandle && sHandle != emissiveHandle && sHandle != heightHandle) {
+                            TextureBatchEntry sEntry = buildBatchEntry(sHandle, pendingBlockPatches, new ArrayList<>(pendingBlockPatches.size()), new TextureBatchEntry(), TextureFormat.RGBA8_UNORM);
                             if (sEntry != null) {
-                                sidecarEntries.add(sEntry);
-                                entryCount++;
+                                entries.add(sEntry);
                             }
                         }
                     }
                 }
             }
-        }
-        if (particleAtlasHandle != 0 && !pendingParticlePatches.isEmpty()) {
-            pEntry = buildBatchEntry(particleAtlasHandle, pendingParticlePatches, particlePatchesBuffer, particleBatchEntry);
-            if (pEntry != null) entryCount++;
-        }
 
-        if (entryCount > 0) {
-            try {
-                TextureBatchEntry[] batchEntries = new TextureBatchEntry[entryCount];
-                int idx = 0;
-                if (bEntry != null) batchEntries[idx++] = bEntry;
-                if (sidecarEntries != null) {
-                    for (int i = 0; i < sidecarEntries.size(); i++) {
-                        batchEntries[idx++] = sidecarEntries.get(i);
-                    }
-                }
-                if (pEntry != null) batchEntries[idx] = pEntry;
-
-                sharedPatchInfo.entries = batchEntries;
-                api.updateTextureFromMemory(sharedPatchInfo);
-            } catch (Exception e) {
-                LOGGER.debug("Failed to forward animated atlas patches: {}", e.getMessage());
+            // Process Particle Atlas
+            if (particleAtlasHandle != 0 && !pendingParticlePatches.isEmpty()) {
+                TextureBatchEntry pEntry = buildBatchEntry(particleAtlasHandle, pendingParticlePatches, particlePatchesBuffer, particleBatchEntry, TextureFormat.RGBA8_UNORM);
+                if (pEntry != null) entries.add(pEntry);
             }
-        }
 
-        pendingBlockPatches.clear();
-        pendingParticlePatches.clear();
+            if (!entries.isEmpty()) {
+                TexturePatchInfo info = new TexturePatchInfo();
+                info.entries = entries.toArray(new TextureBatchEntry[0]);
+                api.updateTextureFromMemory(info);
+            }
+        } catch (Exception e) {
+            LOGGER.debug("Failed to forward animated atlas patches: {}", e.getMessage());
+        } finally {
+            for (ByteBuffer buf : ownedBuffers) {
+                DirectBufferPool.release(buf);
+            }
+            pendingBlockPatches.clear();
+            pendingParticlePatches.clear();
+        }
     }
 
     public static TextureBatchEntry buildBatchEntry(long textureHandle, List<PendingPatch> patchesList) {
-        return buildBatchEntry(textureHandle, patchesList, new ArrayList<>(patchesList.size()), new TextureBatchEntry());
+        return buildBatchEntry(textureHandle, patchesList, TextureFormat.RGBA8_UNORM);
     }
 
-    private static TextureBatchEntry buildBatchEntry(long textureHandle,
+    public static TextureBatchEntry buildBatchEntry(long textureHandle, List<PendingPatch> patchesList, int format) {
+        return buildBatchEntry(textureHandle, patchesList, new ArrayList<>(patchesList.size()), new TextureBatchEntry(), format);
+    }
+
+    public static TextureBatchEntry buildBatchEntry(long textureHandle,
                                                      List<PendingPatch> patchesList,
                                                      List<TexturePatch> patchBuffer,
                                                      TextureBatchEntry outEntry) {
+        return buildBatchEntry(textureHandle, patchesList, patchBuffer, outEntry, TextureFormat.RGBA8_UNORM);
+    }
+
+    public static TextureBatchEntry buildBatchEntry(long textureHandle,
+                                                     List<PendingPatch> patchesList,
+                                                     List<TexturePatch> patchBuffer,
+                                                     TextureBatchEntry outEntry,
+                                                     int format) {
         if (textureHandle == 0 || patchesList.isEmpty()) return null;
         patchBuffer.clear();
+
+        int bpp = (format == TextureFormat.R8_UNORM) ? 1 : 4;
 
         for (int i = 0; i < patchesList.size(); i++) {
             PendingPatch p = patchesList.get(i);
@@ -255,8 +419,8 @@ public final class AtlasAnimationForwarder {
             if (p.dstX < 0 || p.dstY < 0) continue;
             // Enforce upper bound on dimension to prevent uint32 overflow in Remix
             if (p.width > 65535 || p.height > 65535) continue;
-            // rowPitch must cover at least one full row of pixel data (4 bpp for RGBA8)
-            if (p.rowPitch < p.width * 4) continue;
+            // rowPitch must cover at least one full row of pixel data (bpp bytes per pixel)
+            if (p.rowPitch < p.width * bpp) continue;
             // Strict source sub-rectangle bounds check with 64-bit math to prevent integer overflow
             if (p.srcX < 0 || p.srcY < 0) continue;
             if ((long) p.srcX + (long) p.width > (long) p.srcImageWidth ||
@@ -265,8 +429,8 @@ public final class AtlasAnimationForwarder {
             }
 
             // Mathematically correct strided offset from base pointer
-            long offsetPtr = p.pixelPtr + (long) p.srcY * (long) p.rowPitch + (long) p.srcX * 4L;
-            long reqBytes64 = (long) (p.height - 1) * (long) p.rowPitch + (long) p.width * 4L;
+            long offsetPtr = p.pixelPtr + (long) p.srcY * (long) p.rowPitch + (long) p.srcX * (long) bpp;
+            long reqBytes64 = (long) (p.height - 1) * (long) p.rowPitch + (long) p.width * (long) bpp;
             if (reqBytes64 <= 0 || reqBytes64 > Integer.MAX_VALUE) continue;
             int requiredBytes = (int) reqBytes64;
 
@@ -279,7 +443,7 @@ public final class AtlasAnimationForwarder {
             patch.height = p.height;
             patch.pixelData = buf;
             patch.rowPitch = p.rowPitch;
-            patch.format = TextureFormat.RGBA8_UNORM;
+            patch.format = format;
             patchBuffer.add(patch);
         }
 

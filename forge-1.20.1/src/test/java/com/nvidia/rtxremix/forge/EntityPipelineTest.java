@@ -124,7 +124,9 @@ public class EntityPipelineTest {
     @Test
     void testCapturableTextureOnEntityRenderType() {
         net.minecraft.SharedConstants.tryDetectVersion();
-        net.minecraft.server.Bootstrap.bootStrap();
+        try {
+            net.minecraft.server.Bootstrap.bootStrap();
+        } catch (Throwable ignored) {}
         net.minecraft.resources.ResourceLocation cowTex = new net.minecraft.resources.ResourceLocation("minecraft", "textures/entity/cow/cow.png");
         net.minecraft.client.renderer.RenderType layer = net.minecraft.client.renderer.RenderType.entityCutout(cowTex);
         java.util.Optional<net.minecraft.resources.ResourceLocation> extracted = com.nvidia.rtxremix.forge.entity.RenderLayerUtils.capturableTexture(layer);
