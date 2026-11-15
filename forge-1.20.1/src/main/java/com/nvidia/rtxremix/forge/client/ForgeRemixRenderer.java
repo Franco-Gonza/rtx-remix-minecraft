@@ -49,6 +49,7 @@ public final class ForgeRemixRenderer {
     private long waterCameraMediumMaterial = 0;
     private long lastCameraMediumHandle = 0;
     private long translucentTerrainMaterial = 0;
+    private long lavaTerrainMaterial = 0;
     private long waterNormalTexture = 0;
     private long waterWhiteTexture = 0;
     private long solidBlendPNext = 0;
@@ -487,12 +488,30 @@ public final class ForgeRemixRenderer {
                             .build();
                     translucentTerrainMaterial = api.createMaterial(transInfo);
 
-                    LOGGER.info("Created specialized terrain materials: solid=0x{}, cutout=0x{}, cutout_mipped=0x{}, water=0x{}, trans=0x{}",
+                    // 5. Lava terrain material (opaque molten fluid with emissive glow and specular reflection)
+                    MaterialInfoOpaqueEXT lavaOpaque = MaterialInfoOpaqueEXT.builder()
+                            .albedoConstant(1.0f, 1.0f, 1.0f)
+                            .roughnessConstant(0.20f)
+                            .metallicConstant(0.0f)
+                            .useDrawCallAlphaState(false)
+                            .build();
+                    MaterialInfo lavaInfo = MaterialInfo.builder()
+                            .hash(0x4C41_5641_5F4D_4154L) // "LAVA_MAT"
+                            .albedoTexture(terrainAtlasTexture)
+                            .emissiveTexture(terrainAtlasTexture)
+                            .emissiveIntensity(20.0f)
+                            .filterMode(0)
+                            .opaqueExt(lavaOpaque)
+                            .build();
+                    lavaTerrainMaterial = api.createMaterial(lavaInfo);
+
+                    LOGGER.info("Created specialized terrain materials: solid=0x{}, cutout=0x{}, cutout_mipped=0x{}, water=0x{}, trans=0x{}, lava=0x{}",
                             Long.toHexString(solidTerrainMaterial),
                             Long.toHexString(cutoutTerrainMaterial),
                             Long.toHexString(cutoutMippedTerrainMaterial),
                             Long.toHexString(waterMaterial),
-                            Long.toHexString(translucentTerrainMaterial));
+                            Long.toHexString(translucentTerrainMaterial),
+                            Long.toHexString(lavaTerrainMaterial));
 
                     // Trigger level chunk reload so all chunks use the definitive materials
                     if (client.levelRenderer != null) {
@@ -827,6 +846,9 @@ public final class ForgeRemixRenderer {
                         int categoryFlags = 0;
                         if ("water".equals(surface.bucketKey())) {
                             matHandle = waterMaterial != 0 ? waterMaterial : defaultTerrainMaterial;
+                            blendPNext = solidBlendPNext;
+                        } else if ("lava".equals(surface.bucketKey())) {
+                            matHandle = lavaTerrainMaterial != 0 ? lavaTerrainMaterial : (solidTerrainMaterial != 0 ? solidTerrainMaterial : defaultTerrainMaterial);
                             blendPNext = solidBlendPNext;
                         } else if (surface.category() == SectionMeshData.CAT_OVERLAY) {
                             matHandle = cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial;
@@ -1168,6 +1190,10 @@ public final class ForgeRemixRenderer {
         if (translucentTerrainMaterial != 0 && api != null) {
             try { api.destroyMaterial(translucentTerrainMaterial); } catch (Exception ignored) {}
             translucentTerrainMaterial = 0;
+        }
+        if (lavaTerrainMaterial != 0 && api != null) {
+            try { api.destroyMaterial(lavaTerrainMaterial); } catch (Exception ignored) {}
+            lavaTerrainMaterial = 0;
         }
         if (waterNormalTexture != 0 && api != null) {
             try { api.destroyTexture(waterNormalTexture); } catch (Exception ignored) {}

@@ -122,6 +122,14 @@ public final class BlockQuadEmitter {
 
     private static final ResourceLocation WATER_STILL_SPRITE = new ResourceLocation("minecraft", "block/water_still");
     private static final ResourceLocation WATER_FLOW_SPRITE = new ResourceLocation("minecraft", "block/water_flow");
+    private static final ResourceLocation LAVA_STILL_SPRITE = new ResourceLocation("minecraft", "block/lava_still");
+    private static final ResourceLocation LAVA_FLOW_SPRITE = new ResourceLocation("minecraft", "block/lava_flow");
+
+    static boolean isLavaSprite(ResourceLocation spriteId) {
+        if (spriteId == null) return false;
+        return LAVA_STILL_SPRITE.equals(spriteId) || LAVA_FLOW_SPRITE.equals(spriteId)
+                || spriteId.getPath().contains("lava_still") || spriteId.getPath().contains("lava_flow");
+    }
 
     private BlockQuadEmitter() {}
 
@@ -378,11 +386,14 @@ public final class BlockQuadEmitter {
             return;
         }
 
-        if (spriteId != null && "solid".equals(layerName)) {
-            BlockTextureManager.SpriteEntry entry = texManager != null ? texManager.getSpriteById(spriteId) : null;
-            if (entry != null && entry.hasTransparency()) {
-                layerName = "cutout";
+        if (spriteId != null && ("solid".equals(layerName) || "lava".equals(layerName))) {
+            if (isLavaSprite(spriteId)) {
+                layerName = "lava";
             } else {
+                BlockTextureManager.SpriteEntry entry = texManager != null ? texManager.getSpriteById(spriteId) : null;
+                if (entry != null && entry.hasTransparency()) {
+                    layerName = "cutout";
+                } else {
                 String sp = spriteId.getPath().toLowerCase();
                 if (sp.contains("leaves") || sp.contains("foliage") || sp.contains("needle") || sp.contains("canopy")) {
                     layerName = "cutout_mipped";
@@ -405,6 +416,7 @@ public final class BlockQuadEmitter {
                     layerName = "cutout";
                 }
             }
+        }
         }
         float su0 = sprite != null ? sprite.getU0() : 0;
         float sv0 = sprite != null ? sprite.getV0() : 0;
@@ -456,10 +468,15 @@ public final class BlockQuadEmitter {
 
         boolean isLava = fluidState.is(FluidTags.LAVA);
         boolean isWater = !isLava;
-        String layer = isLava ? "solid" : "translucent";
-        int fluidColor = isWater
-                ? getCachedWaterColor(ext, world, fluidState, lx, ly, lz)
-                : ext.getTintColor(fluidState, world, fluidPos);
+        String layer = isLava ? "lava" : "translucent";
+        int fluidColor;
+        if (isWater) {
+            fluidColor = getCachedWaterColor(ext, world, fluidState, lx, ly, lz);
+        } else if (isLava) {
+            fluidColor = 0xFFFFFFFF; // Pure incandescent white vertex color so sprite colors remain vibrant
+        } else {
+            fluidColor = ext.getTintColor(fluidState, world, fluidPos);
+        }
         int r = (fluidColor >> 16) & 0xFF, g = (fluidColor >> 8) & 0xFF, b = fluidColor & 0xFF;
         int color = 0xFF000000 | (r << 16) | (g << 8) | b;
 
@@ -467,6 +484,18 @@ public final class BlockQuadEmitter {
         float h10 = getFluidHeight(world, fluidState, baseX + lx + 1, baseY + ly, baseZ + lz);
         float h01 = getFluidHeight(world, fluidState, baseX + lx, baseY + ly, baseZ + lz + 1);
         float h11 = getFluidHeight(world, fluidState, baseX + lx + 1, baseY + ly, baseZ + lz + 1);
+
+        float topNx = (h00 + h01) - (h10 + h11);
+        float topNy = 2.0f;
+        float topNz = (h00 + h10) - (h01 + h11);
+        float topLen = (float) Math.sqrt(topNx * topNx + topNy * topNy + topNz * topNz);
+        if (topLen > 1.0E-6f) {
+            topNx /= topLen;
+            topNy /= topLen;
+            topNz /= topLen;
+        } else {
+            topNx = 0.0f; topNy = 1.0f; topNz = 0.0f;
+        }
 
         float tileSize = BlockTextureManager.getWaterTileSize();
         int wx = baseX + lx, wy = baseY + ly, wz = baseZ + lz;
@@ -499,21 +528,21 @@ public final class BlockQuadEmitter {
                 float u0 = wx / tileSize, v0 = wz / tileSize;
                 float u1 = (wx + 1) / tileSize, v1 = (wz + 1) / tileSize;
                 setUv4(tempUvs, u0, v0, u1, v0, u1, v1, u0, v1);
-                writer.writeFluidQuad(tempPositions, tempUvs, 0, 1, 0, color,
+                writer.writeFluidQuad(tempPositions, tempUvs, topNx, topNy, topNz, color,
                         null, 0, 0, 1, 1, layer, texManager);
                 setPos4(tempPositions, lx, ly + h01, lz + 1, lx + 1, ly + h11, lz + 1,
                         lx + 1, ly + h10, lz, lx, ly + h00, lz);
-                writer.writeFluidQuad(tempPositions, tempUvs, 0, -1, 0, color,
+                writer.writeFluidQuad(tempPositions, tempUvs, -topNx, -topNy, -topNz, color,
                         null, 0, 0, 1, 1, layer, texManager);
             } else {
                 Vec3 flow = fluidState.getFlow(world, fluidPos);
                 if (flow.x == 0.0 && flow.z == 0.0) {
                     setUv4(tempUvs, su0, sv0, su1, sv0, su1, sv1, su0, sv1);
-                    writer.writeFluidQuad(tempPositions, tempUvs, 0, 1, 0, color,
+                    writer.writeFluidQuad(tempPositions, tempUvs, topNx, topNy, topNz, color,
                             stillId, su0, sv0, su1, sv1, layer, texManager);
                     setPos4(tempPositions, lx, ly + h01, lz + 1, lx + 1, ly + h11, lz + 1,
                             lx + 1, ly + h10, lz, lx, ly + h00, lz);
-                    writer.writeFluidQuad(tempPositions, tempUvs, 0, -1, 0, color,
+                    writer.writeFluidQuad(tempPositions, tempUvs, -topNx, -topNy, -topNz, color,
                             stillId, su0, sv0, su1, sv1, layer, texManager);
                 } else {
                     float angle = (float) Mth.atan2(flow.z, flow.x) - (float) (Math.PI / 2.0);
@@ -524,12 +553,12 @@ public final class BlockQuadEmitter {
                     float c11u = flowSprite.getU(0.5f + cos + sin), c11v = flowSprite.getV(0.5f + cos - sin);
                     float c10u = flowSprite.getU(0.5f + cos - sin), c10v = flowSprite.getV(0.5f - cos - sin);
                     setUv4(tempUvs, c00u, c00v, c10u, c10v, c11u, c11v, c01u, c01v);
-                    writer.writeFluidQuad(tempPositions, tempUvs, 0, 1, 0, color,
+                    writer.writeFluidQuad(tempPositions, tempUvs, topNx, topNy, topNz, color,
                             flowId, fu0, fv0, fu1, fv1, layer, texManager);
                     setPos4(tempPositions, lx, ly + h01, lz + 1, lx + 1, ly + h11, lz + 1,
                             lx + 1, ly + h10, lz, lx, ly + h00, lz);
                     setUv4(tempUvs, c01u, c01v, c11u, c11v, c10u, c10v, c00u, c00v);
-                    writer.writeFluidQuad(tempPositions, tempUvs, 0, -1, 0, color,
+                    writer.writeFluidQuad(tempPositions, tempUvs, -topNx, -topNy, -topNz, color,
                             flowId, fu0, fv0, fu1, fv1, layer, texManager);
                 }
             }
@@ -858,6 +887,7 @@ public final class BlockQuadEmitter {
 
     public static String classifyBlockLayer(BlockState state) {
         if (state.is(Blocks.GLASS) || state.is(Blocks.GLASS_PANE)) return "glass";
+        if (state.is(Blocks.LAVA)) return "lava";
 
         net.minecraft.world.level.block.Block b = state.getBlock();
         if (b instanceof LeavesBlock || state.is(BlockTags.LEAVES)) {

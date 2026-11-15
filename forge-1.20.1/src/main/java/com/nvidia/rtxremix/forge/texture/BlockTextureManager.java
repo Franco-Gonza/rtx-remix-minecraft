@@ -23,7 +23,8 @@ public class BlockTextureManager {
     public static final int L_CUTOUT_MIPPED = 2;
     public static final int L_TRANS = 3;
     public static final int L_GLASS = 4;
-    public static final int LAYER_COUNT = 5;
+    public static final int L_LAVA = 5;
+    public static final int LAYER_COUNT = 6;
 
     public static final float WATER_TILE_SIZE = 10.0f;
 
@@ -55,6 +56,7 @@ public class BlockTextureManager {
             case "cutout_mipped" -> L_CUTOUT_MIPPED;
             case "translucent" -> L_TRANS;
             case "glass" -> L_GLASS;
+            case "lava" -> L_LAVA;
             default -> L_SOLID;
         };
     }

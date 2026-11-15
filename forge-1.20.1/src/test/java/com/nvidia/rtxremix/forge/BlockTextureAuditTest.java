@@ -157,5 +157,45 @@ public class BlockTextureAuditTest {
             meshData.release();
         }
     }
+
+    @Test
+    void testLavaClassificationAndBucketIsolation() {
+        assertEquals("lava", BlockQuadEmitter.classifyBlockLayer(Blocks.LAVA.defaultBlockState()));
+        assertEquals(BlockTextureManager.L_LAVA, BlockTextureManager.layerType("lava"));
+
+        ResourceLocation lavaStill = new ResourceLocation("minecraft", "block/lava_still");
+        DirectQuadWriter writer = new DirectQuadWriter();
+        writer.beginSection();
+
+        writer.writeFluidQuad(FRONT_POSITIONS, UVS, 0.0f, 1.0f, 0.0f,
+                0xFFFFFFFF, lavaStill, 0.0f, 0.0f, 1.0f, 1.0f, "lava", BlockTextureManager.get());
+
+        SectionMeshData meshData = writer.buildMeshData();
+        try {
+            assertEquals(1, meshData.surfaces().size());
+            SectionMeshData.Surface surface = meshData.surfaces().get(0);
+            assertEquals("lava", surface.bucketKey());
+            assertEquals(SectionMeshData.CAT_SOLID, surface.category());
+            assertEquals(4, surface.vertexCount());
+        } finally {
+            meshData.release();
+        }
+    }
+
+    @Test
+    void testInspectBakedQuadLayout() throws Exception {
+        net.minecraft.client.renderer.FaceInfo upInfo = net.minecraft.client.renderer.FaceInfo.fromFacing(net.minecraft.core.Direction.UP);
+        System.out.println("UP info: ");
+        for (int i = 0; i < 4; i++) {
+            net.minecraft.client.renderer.FaceInfo.VertexInfo vi = upInfo.getVertexInfo(i);
+            System.out.println("  v" + i + ": xFace=" + vi.xFace + " yFace=" + vi.yFace + " zFace=" + vi.zFace);
+        }
+        net.minecraft.client.renderer.FaceInfo downInfo = net.minecraft.client.renderer.FaceInfo.fromFacing(net.minecraft.core.Direction.DOWN);
+        System.out.println("DOWN info: ");
+        for (int i = 0; i < 4; i++) {
+            net.minecraft.client.renderer.FaceInfo.VertexInfo vi = downInfo.getVertexInfo(i);
+            System.out.println("  v" + i + ": xFace=" + vi.xFace + " yFace=" + vi.yFace + " zFace=" + vi.zFace);
+        }
+    }
 }
 

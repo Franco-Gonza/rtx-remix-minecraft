@@ -285,7 +285,9 @@ public final class DirectQuadWriter {
 
             String bk = layer;
             if (cat == SectionMeshData.CAT_SOLID && layerType != solidType) {
-                bk = "solid";
+                if (!"lava".equals(bk)) {
+                    bk = "solid";
+                }
             } else if (cat == SectionMeshData.CAT_CUTOUT && ("solid".equals(bk) || layerType == solidType)) {
                 bk = "cutout";
             }
