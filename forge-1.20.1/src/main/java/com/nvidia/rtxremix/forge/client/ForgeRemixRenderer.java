@@ -781,8 +781,14 @@ public final class ForgeRemixRenderer {
                             float baseIntensity = entry.hasIntensity() ? entry.intensity() : (entry.lightLevel() * 12.0f);
                             baseIntensity *= entry.authoredIntensityMultiplier();
 
+                            long lightHash = (((long) Double.doubleToLongBits(entry.x())) * 31L
+                                    + (long) Double.doubleToLongBits(entry.y())) * 31L
+                                    + (long) Double.doubleToLongBits(entry.z())
+                                    ^ ((long) entry.shape().ordinal() * 1000003L);
+                            if (lightHash == 0) lightHash = 1L;
+
                             LightInfo.Builder lib = LightInfo.builder()
-                                    .hash(java.util.concurrent.ThreadLocalRandom.current().nextLong() | 1L)
+                                    .hash(lightHash)
                                     .radiance(r * baseIntensity, g * baseIntensity, b * baseIntensity);
 
                             switch (entry.shape()) {
