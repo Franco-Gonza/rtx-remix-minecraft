@@ -56,10 +56,10 @@ public abstract class LevelRendererMixin {
     }
 
     @Inject(method = "renderClouds", at = @At("HEAD"), cancellable = true)
-    private void rtxremix$suppressPreOverlayClouds(
+    private void rtxremix$suppressClouds(
             PoseStack poseStack, Matrix4f projectionMatrix, float partialTick,
             double camX, double camY, double camZ, CallbackInfo ci) {
-        if (ForgeRemixRenderer.isRtxEnabled() && !ForgeRemixRenderer.isRenderingPostClouds()) {
+        if (ForgeRemixRenderer.isRtxEnabled()) {
             ci.cancel();
         }
     }

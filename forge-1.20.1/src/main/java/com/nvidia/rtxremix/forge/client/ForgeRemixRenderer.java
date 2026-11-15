@@ -919,27 +919,6 @@ public final class ForgeRemixRenderer {
                     if (remixTexture > 0 && overlay != null) {
                         overlay.render(remixTexture);
 
-                        // Draw clouds on top of the raytraced scene overlay
-                        if (client.level != null && client.levelRenderer != null && client.gameRenderer != null) {
-                            try {
-                                Camera camera = client.gameRenderer.getMainCamera();
-                                if (camera != null) {
-                                    Vec3 camPos = camera.getPosition();
-                                    renderingPostClouds = true;
-                                    com.mojang.blaze3d.vertex.PoseStack cloudPoseStack = new com.mojang.blaze3d.vertex.PoseStack();
-                                    float fov = (float) ((com.nvidia.rtxremix.forge.mixin.GameRendererAccessor) client.gameRenderer)
-                                            .rtxremix$invokeGetFov(camera, lastPartialTicks, true);
-                                    org.joml.Matrix4f projMatrix = client.gameRenderer.getProjectionMatrix(fov);
-                                    ((com.nvidia.rtxremix.forge.mixin.LevelRendererAccessor) client.levelRenderer)
-                                            .rtxremix$renderClouds(cloudPoseStack, projMatrix, lastPartialTicks, camPos.x, camPos.y, camPos.z);
-                                }
-                            } catch (Exception e) {
-                                LOGGER.debug("Post-overlay cloud draw skipped: {}", e.getMessage());
-                            } finally {
-                                renderingPostClouds = false;
-                            }
-                        }
-
                         // Draw rain and snow on top of the raytraced scene overlay
                         if (client.level != null && (client.level.isRaining() || client.level.isThundering())
                                 && client.levelRenderer != null && client.gameRenderer != null) {

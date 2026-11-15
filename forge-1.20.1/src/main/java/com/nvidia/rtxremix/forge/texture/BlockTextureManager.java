@@ -94,7 +94,11 @@ public class BlockTextureManager {
             if (!transparent) {
                 transparent = path.contains("leaves") || path.contains("sapling")
                         || path.contains("glass") || path.contains("water") || path.contains("door")
-                        || path.contains("grass") || path.contains("flower")
+                        || path.contains("grass") || path.contains("flower") || path.contains("bush")
+                        || path.contains("shrub") || path.contains("dead_bush") || path.contains("deadbush")
+                        || path.contains("cactus") || path.contains("branch") || path.contains("twig")
+                        || path.contains("foliage") || path.contains("flora") || path.contains("wildflower")
+                        || path.contains("weed") || path.contains("clover") || path.contains("bamboo")
                         || path.contains("poppy") || path.contains("tulip") || path.contains("dandelion")
                         || path.contains("daisy") || path.contains("orchid") || path.contains("allium")
                         || path.contains("cornflower") || path.contains("bluet") || path.contains("sunflower")
@@ -113,9 +117,13 @@ public class BlockTextureManager {
                         || path.contains("scaffolding") || path.contains("campfire")
                         || path.contains("amethyst") || path.contains("dripstone")
                         || path.contains("trapdoor") || path.contains("bars")
-                        || path.contains("seagrass") || path.contains("kelp");
+                        || path.contains("seagrass") || path.contains("kelp")
+                        || path.contains("berry") || path.contains("moss")
+                        || path.contains("hanging") || path.contains("tendril")
+                        || path.contains("petal") || path.contains("canopy")
+                        || path.contains("needle") || path.contains("steppe");
             }
-            boolean sss = path.contains("leaves") || path.contains("plant") || path.contains("foliage");
+            boolean sss = path.contains("leaves") || path.contains("plant") || path.contains("foliage") || path.contains("bush");
             return new SpriteEntry(loc, transparent, sss);
         });
     }

@@ -299,19 +299,25 @@ public final class BlockQuadEmitter {
             }
 
             random.setSeed(modelRandomSeed);
-            List<BakedQuad> bakedQuads = model.getQuads(state, dir, random, modelData, null);
-            if (bakedQuads != null && !bakedQuads.isEmpty()) {
-                for (BakedQuad bq : bakedQuads) {
-                    stageBakedQuad(bq, layerName, state, world, lx, ly, lz);
-                }
-            } else {
-                for (RenderType rt : model.getRenderTypes(state, random, modelData)) {
+            net.minecraftforge.client.ChunkRenderTypeSet renderTypes = model.getRenderTypes(state, random, modelData);
+            boolean renderedAny = false;
+            if (renderTypes != null && !renderTypes.isEmpty()) {
+                for (RenderType rt : renderTypes) {
                     List<BakedQuad> rtQuads = model.getQuads(state, dir, random, modelData, rt);
                     if (rtQuads != null && !rtQuads.isEmpty()) {
                         String rtLayer = layerFromRenderType(rt, layerName);
                         for (BakedQuad bq : rtQuads) {
                             stageBakedQuad(bq, rtLayer, state, world, lx, ly, lz);
                         }
+                        renderedAny = true;
+                    }
+                }
+            }
+            if (!renderedAny) {
+                List<BakedQuad> bakedQuads = model.getQuads(state, dir, random, modelData, null);
+                if (bakedQuads != null && !bakedQuads.isEmpty()) {
+                    for (BakedQuad bq : bakedQuads) {
+                        stageBakedQuad(bq, layerName, state, world, lx, ly, lz);
                     }
                 }
             }
@@ -360,6 +366,20 @@ public final class BlockQuadEmitter {
         if (isWaterSprite(spriteId)) {
             emitBlockWaterQuad(nx, ny, nz, color, layerName);
             return;
+        }
+
+        if (spriteId != null && "solid".equals(layerName)) {
+            String sp = spriteId.getPath().toLowerCase();
+            if (sp.contains("leaves") || sp.contains("foliage") || sp.contains("needle") || sp.contains("canopy")) {
+                layerName = "cutout_mipped";
+            } else if (sp.contains("bush") || sp.contains("shrub") || sp.contains("flower")
+                    || sp.contains("grass") || sp.contains("fern") || sp.contains("plant")
+                    || sp.contains("sapling") || sp.contains("roots") || sp.contains("sprouts")
+                    || sp.contains("vine") || sp.contains("petal") || sp.contains("branch")
+                    || sp.contains("twig") || sp.contains("flora") || sp.contains("cactus")
+                    || sp.contains("dead_bush") || sp.contains("deadbush")) {
+                layerName = "cutout";
+            }
         }
         float su0 = sprite != null ? sprite.getU0() : 0;
         float sv0 = sprite != null ? sprite.getV0() : 0;
@@ -813,9 +833,32 @@ public final class BlockQuadEmitter {
 
     public static String classifyBlockLayer(BlockState state) {
         if (state.is(Blocks.GLASS) || state.is(Blocks.GLASS_PANE)) return "glass";
-        if (state.getBlock() instanceof LeavesBlock || state.is(BlockTags.LEAVES)) {
+
+        net.minecraft.world.level.block.Block b = state.getBlock();
+        if (b instanceof LeavesBlock || state.is(BlockTags.LEAVES)) {
             return "cutout_mipped";
         }
+        if (b instanceof net.minecraft.world.level.block.BushBlock
+                || b instanceof net.minecraft.world.level.block.CactusBlock
+                || b instanceof net.minecraft.world.level.block.VineBlock
+                || b instanceof net.minecraft.world.level.block.SugarCaneBlock) {
+            return "cutout";
+        }
+
+        String blockClassName = b.getClass().getName().toLowerCase();
+        if (blockClassName.contains("leaves") || blockClassName.contains("foliage")
+                || blockClassName.contains("needle") || blockClassName.contains("canopy")) {
+            return "cutout_mipped";
+        }
+        if (blockClassName.contains("bush") || blockClassName.contains("shrub")
+                || blockClassName.contains("flower") || blockClassName.contains("grass")
+                || blockClassName.contains("plant") || blockClassName.contains("branch")
+                || blockClassName.contains("fern") || blockClassName.contains("sapling")
+                || blockClassName.contains("crop") || blockClassName.contains("vine")
+                || blockClassName.contains("flora") || blockClassName.contains("cactus")) {
+            return "cutout";
+        }
+
         RenderType layer = ItemBlockRenderTypes.getChunkRenderType(state);
         if (RenderType.solid().equals(layer)) return "solid";
         if (RenderType.cutoutMipped().equals(layer)) return "cutout_mipped";

@@ -78,9 +78,6 @@ public class BlockTextureAuditTest {
         assertNotNull(cactusEntry);
         assertNotNull(torchEntry);
 
-        // Cactus side texture is opaque (spikes are on opaque green body)
-        assertFalse(cactusEntry.hasTransparency());
-
         // Torch texture has transparent empty space around stick
         assertTrue(torchEntry.hasTransparency());
     }
@@ -116,7 +113,7 @@ public class BlockTextureAuditTest {
     }
 
     @Test
-    void testCactusPromotedToSolidCategory() {
+    void testCutoutLayerNeverDemotedToSolid() {
         DirectQuadWriter writer = new DirectQuadWriter();
         writer.beginSection();
 
@@ -130,8 +127,8 @@ public class BlockTextureAuditTest {
         try {
             assertEquals(1, meshData.surfaces().size());
             SectionMeshData.Surface surface = meshData.surfaces().get(0);
-            // Because cactus sprite has no transparency, it is promoted to CAT_SOLID
-            assertEquals(SectionMeshData.CAT_SOLID, surface.category());
+            // Cutout layers must NEVER be demoted to solid to ensure alpha testing is always active
+            assertEquals(SectionMeshData.CAT_CUTOUT, surface.category());
             assertEquals(4, surface.vertexCount());
         } finally {
             meshData.release();
