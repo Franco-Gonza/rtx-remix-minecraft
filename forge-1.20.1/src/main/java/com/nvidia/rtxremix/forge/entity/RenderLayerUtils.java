@@ -153,7 +153,16 @@ public final class RenderLayerUtils {
             int brk = species.indexOf('[');
             if (brk > 0) species = species.substring(0, brk).trim();
             if (!species.isEmpty()) {
-                return Optional.of(new ResourceLocation("bookofdragons", "textures/entity/genetics/" + species + "/base.png"));
+                net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+                ResourceLocation primary = new ResourceLocation("bookofdragons", "textures/entity/genetics/" + species + "/base.png");
+                if (mc != null && mc.getResourceManager() != null && mc.getResourceManager().getResource(primary).isPresent()) {
+                    return Optional.of(primary);
+                }
+                ResourceLocation nbd = new ResourceLocation("bookofdragons", "textures/entity/genetics/" + species + "_nbd/base.png");
+                if (mc != null && mc.getResourceManager() != null && mc.getResourceManager().getResource(nbd).isPresent()) {
+                    return Optional.of(nbd);
+                }
+                return Optional.of(primary);
             }
         }
 

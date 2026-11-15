@@ -20,8 +20,8 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
 ## 2. Resultados de la Suite de Regresiones Automatizadas
 
 * **Estado de Ejecución:** `BUILD SUCCESSFUL` (13/13 tareas ejecutadas, 24s en test completo `--rerun-tasks`).
-* **Total Tests Ejecutados:** 26
-* **Total Aprobados:** 26 (100% pass rate)
+* **Total Tests Ejecutados:** 27
+* **Total Aprobados:** 27 (100% pass rate)
 * **Fallos / Errores / Omitidos:** 0 / 0 / 0
 
 ### Desglose por Suite de Pruebas:
@@ -29,7 +29,7 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
 | `AtlasAnimationForwarderTest` | 7 | 7 | 0 | 0 | 0 | 0.082s |
 | `BlockTextureAuditTest` | 5 | 5 | 0 | 0 | 0 | 0.021s |
-| `EntityPipelineTest` | 12 | 12 | 0 | 0 | 0 | 0.034s |
+| `EntityPipelineTest` | 13 | 13 | 0 | 0 | 0 | 0.034s |
 | `CanonicalIndexBufferTest` | 2 | 2 | 0 | 0 | 0 | 0.003s |
 
 ---

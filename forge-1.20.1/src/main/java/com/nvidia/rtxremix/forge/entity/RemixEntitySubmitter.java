@@ -104,13 +104,13 @@ public class RemixEntitySubmitter {
         transientMeshes.clear();
     }
 
-    public void submitEntity(EntityCaptureResult result) {
-        submitEntity(result, Vec3.ZERO);
+    public int submitEntity(EntityCaptureResult result) {
+        return submitEntity(result, Vec3.ZERO);
     }
 
-    public void submitEntity(EntityCaptureResult result, Vec3 renderOffset) {
+    public int submitEntity(EntityCaptureResult result, Vec3 renderOffset) {
         if (result == null || result.layers().isEmpty()) {
-            return;
+            return 0;
         }
 
         Object entity = result.entity();
@@ -123,17 +123,21 @@ public class RemixEntitySubmitter {
                 (float) (result.worldPos().z + renderOffset.z)
         );
 
+        int submittedCount = 0;
         for (RemixVertexConsumerProvider.CapturedLayer layer : result.layers()) {
-            submitLayer(result, layer, worldTransform);
+            if (submitLayer(result, layer, worldTransform)) {
+                submittedCount++;
+            }
         }
+        return submittedCount;
     }
 
-    private void submitLayer(EntityCaptureResult result,
-                            RemixVertexConsumerProvider.CapturedLayer layer,
-                            Transform worldTransform) {
+    private boolean submitLayer(EntityCaptureResult result,
+                                RemixVertexConsumerProvider.CapturedLayer layer,
+                                Transform worldTransform) {
         int vertexCount = layer.vertexCount();
         if (vertexCount <= 0) {
-            return;
+            return false;
         }
 
         RemixCapturingConsumer consumer = layer.consumer();
@@ -144,10 +148,13 @@ public class RemixEntitySubmitter {
             }
         }
         long materialHandle = getOrCreateMaterial(layer.textureId(), surfaceMode);
+        if (materialHandle == 0) {
+            return false;
+        }
 
         int indexCount = computeIndexCount(layer.topology(), vertexCount);
         if (indexCount <= 0) {
-            return;
+            return false;
         }
 
         int vertexBufferSize = vertexCount * HardcodedVertex.STRIDE;
@@ -237,7 +244,7 @@ public class RemixEntitySubmitter {
             }
         } catch (Exception e) {
             LOGGER.error("Failed to create mesh for entity layer {}", layer.textureId(), e);
-            return;
+            return false;
         } finally {
             DirectBufferPool.release(vertexBuffer);
             if (!isCanonicalIndex) {
@@ -246,7 +253,7 @@ public class RemixEntitySubmitter {
         }
 
         if (meshHandle == 0) {
-            return;
+            return false;
         }
 
         ensureBlendExtensions();
@@ -277,8 +284,10 @@ public class RemixEntitySubmitter {
                 }
             }
             drawCount++;
+            return true;
         } catch (Exception e) {
             LOGGER.error("Failed to submit scene instance for entity {}", result.entityTypeKey(), e);
+            return false;
         }
     }
 

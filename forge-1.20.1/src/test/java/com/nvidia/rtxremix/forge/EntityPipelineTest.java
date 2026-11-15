@@ -221,6 +221,32 @@ public class EntityPipelineTest {
         assertEquals(expectedLoc, resolved.get());
     }
 
+    @Test
+    void testBookOfDragonsSpeciesTextureResolution() {
+        DummyCustomRenderType nightfuryLayer = new DummyCustomRenderType(
+                "liberanimalium_species_cutout_nightfury", null, com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS);
+        DummyCustomRenderType nadderLayer = new DummyCustomRenderType(
+                "liberanimalium_species_translucent_deadly_nadder", null, com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS);
+
+        java.util.Optional<net.minecraft.resources.ResourceLocation> nightfuryTex =
+                com.nvidia.rtxremix.forge.entity.RenderLayerUtils.capturableTexture(nightfuryLayer);
+        assertTrue(nightfuryTex.isPresent(), "Heuristic should resolve species texture for nightfury");
+        assertEquals("bookofdragons", nightfuryTex.get().getNamespace());
+        assertTrue(nightfuryTex.get().getPath().contains("nightfury"));
+
+        java.util.Optional<net.minecraft.resources.ResourceLocation> nadderTex =
+                com.nvidia.rtxremix.forge.entity.RenderLayerUtils.capturableTexture(nadderLayer);
+        assertTrue(nadderTex.isPresent(), "Heuristic should resolve species texture for deadly_nadder");
+        assertEquals("bookofdragons", nadderTex.get().getNamespace());
+        assertTrue(nadderTex.get().getPath().contains("deadly_nadder"));
+    }
+
+    @Test
+    void testRemixEntityPassLifecycle() {
+        com.nvidia.rtxremix.forge.entity.RemixEntityPass pass = new com.nvidia.rtxremix.forge.entity.RemixEntityPass();
+        pass.resetFrame();
+    }
+
     static class DummyCustomRenderType extends net.minecraft.client.renderer.RenderType {
         private final net.minecraft.resources.ResourceLocation customTexture;
 

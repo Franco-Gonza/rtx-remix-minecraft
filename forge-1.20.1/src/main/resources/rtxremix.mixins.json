@@ -28,7 +28,8 @@
         "SingleQuadParticleAccessor",
         "TextureSheetParticleAccessor",
         "compatibility.GeckoLibGeoRendererMixin",
-        "compatibility.CitadelAdvancedModelBoxMixin"
+        "compatibility.CitadelAdvancedModelBoxMixin",
+        "compatibility.FaunaRendererMixin"
     ],
     "injectors": {
         "defaultRequire": 1

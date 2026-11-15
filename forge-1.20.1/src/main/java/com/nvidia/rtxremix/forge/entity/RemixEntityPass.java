@@ -66,15 +66,21 @@ public class RemixEntityPass {
             result = renderOneEntity(entity, dispatcher, tickDelta);
         } catch (Exception e) {
             LOGGER.error("Error capturing entity {}: {}", entity.getType(), e.getMessage());
+            capturedEntityIds.remove(entity.getId());
             return false;
         } finally {
             dispatcher.setRenderShadow(prevShadow);
         }
 
         if (result != null) {
-            submitter.submitEntity(result, Vec3.ZERO);
-            return true;
+            int submitted = submitter.submitEntity(result, Vec3.ZERO);
+            if (submitted > 0) {
+                return true;
+            }
+            LOGGER.warn("Remix failed to submit mesh instances for entity {}; falling back to OpenGL", entity.getType());
         }
+
+        capturedEntityIds.remove(entity.getId());
         return false;
     }
 
@@ -95,6 +101,20 @@ public class RemixEntityPass {
 
         List<RemixVertexConsumerProvider.CapturedLayer> layers = provider.endEntity();
         if (layers.isEmpty()) {
+            return null;
+        }
+
+        int totalVertices = 0;
+        for (RemixVertexConsumerProvider.CapturedLayer layer : layers) {
+            totalVertices += layer.vertexCount();
+        }
+        if (totalVertices == 0) {
+            return null;
+        }
+        // If entity is a complex mob/dragon but captured quads are negligible (e.g. only 1 accessory quad),
+        // reject so vanilla OpenGL renders the complete mob rather than an incomplete/invisible body.
+        if (entity instanceof net.minecraft.world.entity.Mob && totalVertices < 16) {
+            LOGGER.debug("Entity {} captured only {} vertices; delegating to OpenGL", entity.getType(), totalVertices);
             return null;
         }
 
