@@ -258,6 +258,10 @@ public final class ForgeRemixRenderer {
         return defaultTerrainMaterial;
     }
 
+    public boolean hasSssMaterials() {
+        return terrainSssTexture != 0;
+    }
+
     public void setActive(boolean active) {
         if (this.active == active) return;
         this.active = active;
@@ -459,13 +463,13 @@ public final class ForgeRemixRenderer {
                     }
 
                     if (pbr.hasSSS()) {
-                        java.nio.ByteBuffer sssBuf = org.lwjgl.system.MemoryUtil.memAlloc(width * height * 4);
+                        java.nio.ByteBuffer sssBuf = org.lwjgl.system.MemoryUtil.memAlloc(width * height);
                         try {
                             sssBuf.put(pbr.sssAtlas()).flip();
                             TextureFromMemoryInfo sssInfo = TextureFromMemoryInfo.builder()
                                     .hash(0x5353_535F_5445_5801L) // "SSS_TEX1"
                                     .size(width, height)
-                                    .format(TextureFormat.RGBA8_UNORM)
+                                    .format(TextureFormat.R8_UNORM)
                                     .purpose(com.nvidia.rtxremix.TexturePurpose.DATA)
                                     .pixelData(sssBuf)
                                     .build();
@@ -500,6 +504,7 @@ public final class ForgeRemixRenderer {
                     if (terrainMetallicTexture != 0) com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.registerPbrAtlas(terrainMetallicTexture, com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.PbrChannel.METALLIC);
                     if (terrainEmissiveTexture != 0) com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.registerPbrAtlas(terrainEmissiveTexture, com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.PbrChannel.EMISSIVE);
                     if (terrainSssTexture != 0) com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.registerPbrAtlas(terrainSssTexture, com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.PbrChannel.SSS);
+                    if (terrainSssAlbedoTexture != 0) com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.registerPbrAtlas(terrainSssAlbedoTexture, com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.PbrChannel.SSS_ALBEDO);
 
                     // 1. Solid terrain material (opaque block atlas with PBR binding)
                     MaterialInfoOpaqueEXT.Builder solidOpaque = MaterialInfoOpaqueEXT.builder()
@@ -527,10 +532,13 @@ public final class ForgeRemixRenderer {
                         com.nvidia.rtxremix.MaterialInfoOpaqueSubsurfaceEXT.Builder solidSssBuilder =
                                 com.nvidia.rtxremix.MaterialInfoOpaqueSubsurfaceEXT.builder()
                                         .diffusionProfile(true)
-                                        .radiusTexture(terrainSssAlbedoTexture != 0 ? terrainSssAlbedoTexture : terrainAtlasTexture)
+                                        .radiusTexture(terrainSssTexture)
                                         .radiusScale(com.nvidia.rtxremix.forge.texture.LabPBRConverter.DIFFUSION_SSS_RADIUS_SCALE)
                                         .maxSampleRadius(com.nvidia.rtxremix.forge.texture.LabPBRConverter.DIFFUSION_SSS_MAX_SAMPLE_RADIUS)
                                         .transmittanceTexture(terrainAtlasTexture);
+                        if (terrainSssAlbedoTexture != 0) {
+                            solidSssBuilder.singleScatteringAlbedoTexture(terrainSssAlbedoTexture);
+                        }
                         solidOpaque.subsurfaceExt(solidSssBuilder.build());
                     }
 
@@ -655,6 +663,15 @@ public final class ForgeRemixRenderer {
                     }
 
                     cutoutMippedTerrainMaterial = api.createMaterial(cutoutMippedInfo.build());
+
+                    if (terrainSssTexture != 0) {
+                        com.nvidia.rtxremix.forge.texture.BlockTextureManager.get().setAtlasMaterialSSS(
+                                com.nvidia.rtxremix.forge.texture.BlockTextureManager.L_SOLID, solidTerrainMaterial);
+                        com.nvidia.rtxremix.forge.texture.BlockTextureManager.get().setAtlasMaterialSSS(
+                                com.nvidia.rtxremix.forge.texture.BlockTextureManager.L_CUTOUT, cutoutTerrainMaterial);
+                        com.nvidia.rtxremix.forge.texture.BlockTextureManager.get().setAtlasMaterialSSS(
+                                com.nvidia.rtxremix.forge.texture.BlockTextureManager.L_CUTOUT_MIPPED, cutoutMippedTerrainMaterial);
+                    }
 
                     // Pre-allocate native blend extension pointers for terrain categories (zero hot-path allocation)
                     if (solidBlendPNext == 0) {
@@ -1120,11 +1137,11 @@ public final class ForgeRemixRenderer {
                             matHandle = cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial;
                             categoryFlags = InstanceCategoryBit.DECAL_STATIC;
                             blendPNext = overlayBlendPNext;
-                        } else if ("cutout_mipped".equals(surface.bucketKey())) {
+                        } else if ("cutout_mipped".equals(surface.bucketKey()) || "cutout_mipped_sss".equals(surface.bucketKey())) {
                             matHandle = cutoutMippedTerrainMaterial != 0 ? cutoutMippedTerrainMaterial
                                     : (cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial);
                             blendPNext = cutoutBlendPNext;
-                        } else if (surface.category() == SectionMeshData.CAT_CUTOUT) {
+                        } else if (surface.category() == SectionMeshData.CAT_CUTOUT || "cutout_sss".equals(surface.bucketKey())) {
                             matHandle = cutoutTerrainMaterial != 0 ? cutoutTerrainMaterial : defaultTerrainMaterial;
                             blendPNext = cutoutBlendPNext;
                         } else if (surface.category() == SectionMeshData.CAT_TRANSLUCENT) {
@@ -1440,6 +1457,7 @@ public final class ForgeRemixRenderer {
             try { api.destroyMaterial(cutoutMippedTerrainMaterial); } catch (Exception ignored) {}
             cutoutMippedTerrainMaterial = 0;
         }
+        com.nvidia.rtxremix.forge.texture.BlockTextureManager.get().clearAtlasMaterialsSSS();
         if (solidBlendPNext != 0) {
             RemixBridge.freeExt(solidBlendPNext);
             solidBlendPNext = 0;

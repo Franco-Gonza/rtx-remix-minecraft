@@ -49,12 +49,16 @@ public class BlockTextureManager {
         public final byte[] sAlphaTable;      // 1 byte/pix (emissive factor from _s.A)
         public final byte[] sSssTable;        // 1 byte/pix (SSS intensity from _s.B)
         public final int sW, sH;
+        public final byte[] sssAlbedoTable;   // RGBA8 (4 bytes/pix from _sss)
+        public final int sssW, sssH;
         public final boolean hasEmissive;
         public final boolean hasSSS;
+        public final boolean hasSssAlbedo;
 
         public AnimatedSpriteLabPBR(byte[] normalTable, byte[] aoTable, byte[] heightTable, int nW, int nH,
                                    byte[] sRoughnessTable, byte[] sMetallicTable, byte[] sAlphaTable, byte[] sSssTable, int sW, int sH,
-                                   boolean hasEmissive, boolean hasSSS) {
+                                   byte[] sssAlbedoTable, int sssW, int sssH,
+                                   boolean hasEmissive, boolean hasSSS, boolean hasSssAlbedo) {
             this.normalTable = normalTable;
             this.aoTable = aoTable;
             this.heightTable = heightTable;
@@ -66,8 +70,29 @@ public class BlockTextureManager {
             this.sSssTable = sSssTable;
             this.sW = sW;
             this.sH = sH;
+            this.sssAlbedoTable = sssAlbedoTable;
+            this.sssW = sssW;
+            this.sssH = sssH;
             this.hasEmissive = hasEmissive;
             this.hasSSS = hasSSS;
+            this.hasSssAlbedo = hasSssAlbedo;
+        }
+
+        public AnimatedSpriteLabPBR(byte[] normalTable, byte[] aoTable, byte[] heightTable, int nW, int nH,
+                                   byte[] sRoughnessTable, byte[] sMetallicTable, byte[] sAlphaTable, byte[] sSssTable, int sW, int sH,
+                                   byte[] sssAlbedoTable, int sssW, int sssH,
+                                   boolean hasEmissive, boolean hasSSS) {
+            this(normalTable, aoTable, heightTable, nW, nH,
+                 sRoughnessTable, sMetallicTable, sAlphaTable, sSssTable, sW, sH,
+                 sssAlbedoTable, sssW, sssH, hasEmissive, hasSSS, sssAlbedoTable != null);
+        }
+
+        public AnimatedSpriteLabPBR(byte[] normalTable, byte[] aoTable, byte[] heightTable, int nW, int nH,
+                                   byte[] sRoughnessTable, byte[] sMetallicTable, byte[] sAlphaTable, byte[] sSssTable, int sW, int sH,
+                                   boolean hasEmissive, boolean hasSSS) {
+            this(normalTable, aoTable, heightTable, nW, nH,
+                 sRoughnessTable, sMetallicTable, sAlphaTable, sSssTable, sW, sH,
+                 null, 0, 0, hasEmissive, hasSSS, false);
         }
     }
 
@@ -183,7 +208,22 @@ public class BlockTextureManager {
         });
     }
 
+    private final Long[] atlasMaterialsSSS = new Long[6];
+
+    public void setAtlasMaterialSSS(int layerType, Long handle) {
+        if (layerType >= 0 && layerType < atlasMaterialsSSS.length) {
+            atlasMaterialsSSS[layerType] = handle;
+        }
+    }
+
+    public void clearAtlasMaterialsSSS() {
+        Arrays.fill(atlasMaterialsSSS, null);
+    }
+
     public Long getAtlasMaterialSSS(int layerType) {
+        if (layerType >= 0 && layerType < atlasMaterialsSSS.length && atlasMaterialsSSS[layerType] != null) {
+            return atlasMaterialsSSS[layerType];
+        }
         return null;
     }
 
@@ -197,8 +237,8 @@ public class BlockTextureManager {
         byte[] roughnessAtlas = new byte[totalPixels];
         byte[] metallicAtlas = new byte[totalPixels];
         byte[] emissiveAtlas = new byte[totalPixels * 4];
-        byte[] sssAtlas = new byte[totalPixels * 4];
-        byte[] sssAlbedoAtlas = new byte[totalPixels * 4];
+        byte[] sssAtlas = new byte[totalPixels]; // R8_UNORM (1 byte per pixel: thickness/intensity)
+        byte[] sssAlbedoAtlas = new byte[totalPixels * 4]; // RGBA8_UNORM (4 bytes per pixel: scattering albedo)
 
         // Initialize flat normal: (128, 128, 255, 255)
         for (int i = 0; i < totalPixels; i++) {
@@ -221,13 +261,7 @@ public class BlockTextureManager {
 
         // Initialize SSS thickness to 191 (~0.75 default transmission distance) and SSS albedo
         byte defaultThickness = (byte) Math.round(0.75f * 255.0f);
-        for (int i = 0; i < totalPixels; i++) {
-            int idx4 = i * 4;
-            sssAtlas[idx4]     = defaultThickness;
-            sssAtlas[idx4 + 1] = defaultThickness;
-            sssAtlas[idx4 + 2] = defaultThickness;
-            sssAtlas[idx4 + 3] = (byte) 255;
-        }
+        Arrays.fill(sssAtlas, defaultThickness);
         if (albedoRGBA != null) {
             System.arraycopy(albedoRGBA, 0, sssAlbedoAtlas, 0, Math.min(albedoRGBA.length, sssAlbedoAtlas.length));
         }
@@ -312,12 +346,17 @@ public class BlockTextureManager {
                             int sw = (sImg != null) ? sImg.getWidth() : 0;
                             int sh = (sImg != null) ? sImg.getHeight() : 0;
 
+                            byte[] sssAlbedoTab = (sssImg != null) ? LabPBRConverter.buildSingleScatteringAlbedoTable(sssImg) : null;
+                            int sssw = (sssImg != null) ? sssImg.getWidth() : 0;
+                            int sssh = (sssImg != null) ? sssImg.getHeight() : 0;
+
                             boolean emissive = (sImg != null) && LabPBRConverter.hasEmissiveData(sImg);
-                            boolean sssFlag = (sImg != null) && LabPBRConverter.hasSSSData(sImg);
+                            boolean sssFlag = ((sImg != null) && LabPBRConverter.hasSSSData(sImg)) || (sssImg != null);
 
                             animatedPbrMap.put(loc, new AnimatedSpriteLabPBR(
                                     normTab, aoTab, heightTab, nw, nh,
                                     rTab, mTab, aTab, sssTab, sw, sh,
+                                    sssAlbedoTab, sssw, sssh,
                                     emissive, sssFlag
                             ));
                         }

@@ -87,11 +87,15 @@ public final class ForgeNativeExtractor {
                        .append(System.lineSeparator());
                 modified = true;
             }
-            if (!content.contains("rtx.dlfg.presentOnGraphicsQueue")) {
+            if (java.util.regex.Pattern.compile("(?i)rtx\\.dlfg\\.presentOnGraphicsQueue\\s*=\\s*true").matcher(content).find()) {
+                content = content.replaceAll("(?i)rtx\\.dlfg\\.presentOnGraphicsQueue\\s*=\\s*true", "rtx.dlfg.presentOnGraphicsQueue = False");
+                updated = new StringBuilder(content);
+                modified = true;
+            } else if (!java.util.regex.Pattern.compile("(?i)rtx\\.dlfg\\.presentOnGraphicsQueue").matcher(content).find()) {
                 updated.append(System.lineSeparator())
-                       .append("# Frame generation presents on graphics queue for overlay compatibility")
+                       .append("# Frame generation presents on dedicated async present/compute queue (False) to prevent VK_ERROR_DEVICE_LOST")
                        .append(System.lineSeparator())
-                       .append("rtx.dlfg.presentOnGraphicsQueue = True")
+                       .append("rtx.dlfg.presentOnGraphicsQueue = False")
                        .append(System.lineSeparator());
                 modified = true;
             }
@@ -144,12 +148,16 @@ public final class ForgeNativeExtractor {
             }
         }
 
-        // Propagate to %APPDATA%/.minecraft/rtx.conf if present
+        // Propagate to %APPDATA%/.minecraft/rtx.conf and user.conf if present
         String appData = System.getenv("APPDATA");
         if (appData != null && !appData.isBlank()) {
             Path appDataConf = Paths.get(appData, ".minecraft", "rtx.conf");
             if (Files.exists(appDataConf)) {
                 mergeCriticalConfigKeys(appDataConf);
+            }
+            Path appDataUserConf = Paths.get(appData, ".minecraft", "user.conf");
+            if (Files.exists(appDataUserConf)) {
+                mergeCriticalConfigKeys(appDataUserConf);
             }
         }
     }

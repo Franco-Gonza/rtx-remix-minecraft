@@ -33,7 +33,8 @@ public final class AtlasAnimationForwarder {
         ROUGHNESS(TextureFormat.R8_UNORM, 1),
         METALLIC(TextureFormat.R8_UNORM, 1),
         EMISSIVE(TextureFormat.RGBA8_UNORM, 4),
-        SSS(TextureFormat.RGBA8_UNORM, 4);
+        SSS(TextureFormat.R8_UNORM, 1),
+        SSS_ALBEDO(TextureFormat.RGBA8_UNORM, 4);
 
         public final int format;
         public final int bytesPerPixel;
@@ -180,7 +181,15 @@ public final class AtlasAnimationForwarder {
     }
 
     public static void flush(RemixAPI api, long blockAtlasHandle, long particleAtlasHandle) {
-        if (!active || api == null) {
+        flushWithDispatcher(api != null ? api::updateTextureFromMemory : null, blockAtlasHandle, particleAtlasHandle);
+    }
+
+    public static void flushWithDispatcher(java.util.function.Consumer<TexturePatchInfo> dispatcher, long blockAtlasHandle) {
+        flushWithDispatcher(dispatcher, blockAtlasHandle, 0);
+    }
+
+    public static void flushWithDispatcher(java.util.function.Consumer<TexturePatchInfo> dispatcher, long blockAtlasHandle, long particleAtlasHandle) {
+        if (!active || dispatcher == null) {
             clear();
             return;
         }
@@ -206,12 +215,16 @@ public final class AtlasAnimationForwarder {
                 List<TexturePatch> roughnessPatches = new ArrayList<>(patchCount);
                 List<TexturePatch> metallicPatches = new ArrayList<>(patchCount);
                 List<TexturePatch> emissivePatches = new ArrayList<>(patchCount);
+                List<TexturePatch> sssPatches = new ArrayList<>(patchCount);
+                List<TexturePatch> sssAlbedoPatches = new ArrayList<>(patchCount);
 
                 Long normalHandle = pbrAtlases.get(PbrChannel.NORMAL);
                 Long heightHandle = pbrAtlases.get(PbrChannel.HEIGHT);
                 Long roughnessHandle = pbrAtlases.get(PbrChannel.ROUGHNESS);
                 Long metallicHandle = pbrAtlases.get(PbrChannel.METALLIC);
                 Long emissiveHandle = pbrAtlases.get(PbrChannel.EMISSIVE);
+                Long sssHandle = pbrAtlases.get(PbrChannel.SSS);
+                Long sssAlbedoHandle = pbrAtlases.get(PbrChannel.SSS_ALBEDO);
 
                 for (int i = 0; i < patchCount; i++) {
                     PendingPatch p = pendingBlockPatches.get(i);
@@ -311,6 +324,36 @@ public final class AtlasAnimationForwarder {
                         emissiveBuf.flip();
                         emissivePatches.add(createPatch(p.dstX, p.dstY, p.width, p.height, emissiveBuf, p.width * 4, TextureFormat.RGBA8_UNORM));
                     }
+
+                    // 7. SSS Thickness Patch (R8, 1 bpp)
+                    if (sssHandle != null && sssHandle != 0) {
+                        ByteBuffer sssBuf = DirectBufferPool.acquire(patchBytesR8);
+                        ownedBuffers.add(sssBuf);
+                        if (pbr != null && pbr.hasSSS && pbr.sSssTable != null) {
+                            LabPBRConverter.copyR8Patch(sssBuf, pbr.sSssTable, pbr.sW, pbr.sH, p.srcX, p.srcY, p.width, p.height);
+                        } else {
+                            LabPBRConverter.fillR8Patch(sssBuf, (byte) 191, p.width, p.height);
+                        }
+                        sssBuf.flip();
+                        sssPatches.add(createPatch(p.dstX, p.dstY, p.width, p.height, sssBuf, p.width, TextureFormat.R8_UNORM));
+                    }
+
+                    // 8. SSS Albedo Patch (RGBA8)
+                    if (sssAlbedoHandle != null && sssAlbedoHandle != 0) {
+                        ByteBuffer sssAlbedoBuf = DirectBufferPool.acquire(patchBytesRGBA);
+                        ownedBuffers.add(sssAlbedoBuf);
+                        if (pbr != null && pbr.sssAlbedoTable != null) {
+                            LabPBRConverter.copySssAlbedoPatch(sssAlbedoBuf, pbr.sssAlbedoTable, pbr.sssW, pbr.sssH,
+                                    pbr.aoTable, pbr.nW, pbr.nH, p.srcX, p.srcY, p.width, p.height);
+                        } else if (pbr != null && pbr.aoTable != null) {
+                            LabPBRConverter.applyAOToPatch(sssAlbedoBuf, srcBuf, p.rowPitch,
+                                    pbr.aoTable, pbr.nW, pbr.nH, p.srcX, p.srcY, p.width, p.height);
+                        } else {
+                            LabPBRConverter.copyAlbedoPatch(sssAlbedoBuf, srcBuf, p.rowPitch, p.srcX, p.srcY, p.width, p.height);
+                        }
+                        sssAlbedoBuf.flip();
+                        sssAlbedoPatches.add(createPatch(p.dstX, p.dstY, p.width, p.height, sssAlbedoBuf, p.width * 4, TextureFormat.RGBA8_UNORM));
+                    }
                 }
 
                 if (!albedoPatches.isEmpty()) {
@@ -349,13 +392,26 @@ public final class AtlasAnimationForwarder {
                     ee.patches = emissivePatches.toArray(new TexturePatch[0]);
                     entries.add(ee);
                 }
+                if (sssHandle != null && sssHandle != 0 && !sssPatches.isEmpty()) {
+                    TextureBatchEntry se = new TextureBatchEntry();
+                    se.handle = sssHandle;
+                    se.patches = sssPatches.toArray(new TexturePatch[0]);
+                    entries.add(se);
+                }
+                if (sssAlbedoHandle != null && sssAlbedoHandle != 0 && !sssAlbedoPatches.isEmpty()) {
+                    TextureBatchEntry sae = new TextureBatchEntry();
+                    sae.handle = sssAlbedoHandle;
+                    sae.patches = sssAlbedoPatches.toArray(new TexturePatch[0]);
+                    entries.add(sae);
+                }
 
                 // Legacy sidecar atlases backward compatibility
                 if (!sidecarPbrAtlases.isEmpty()) {
                     for (int i = 0; i < sidecarPbrAtlases.size(); i++) {
                         long sHandle = sidecarPbrAtlases.get(i);
                         if (sHandle != 0 && sHandle != normalHandle && sHandle != roughnessHandle
-                                && sHandle != metallicHandle && sHandle != emissiveHandle && sHandle != heightHandle) {
+                                && sHandle != metallicHandle && sHandle != emissiveHandle && sHandle != heightHandle
+                                && sHandle != sssHandle && sHandle != sssAlbedoHandle) {
                             TextureBatchEntry sEntry = buildBatchEntry(sHandle, pendingBlockPatches, new ArrayList<>(pendingBlockPatches.size()), new TextureBatchEntry(), TextureFormat.RGBA8_UNORM);
                             if (sEntry != null) {
                                 entries.add(sEntry);
@@ -374,7 +430,7 @@ public final class AtlasAnimationForwarder {
             if (!entries.isEmpty()) {
                 TexturePatchInfo info = new TexturePatchInfo();
                 info.entries = entries.toArray(new TextureBatchEntry[0]);
-                api.updateTextureFromMemory(info);
+                dispatcher.accept(info);
             }
         } catch (Exception e) {
             LOGGER.debug("Failed to forward animated atlas patches: {}", e.getMessage());

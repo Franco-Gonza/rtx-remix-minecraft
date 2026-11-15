@@ -5,8 +5,11 @@
 package com.nvidia.rtxremix.forge;
 
 import com.nvidia.rtxremix.TextureBatchEntry;
+import com.nvidia.rtxremix.TextureFormat;
+import com.nvidia.rtxremix.TexturePatchInfo;
 import com.nvidia.rtxremix.forge.terrain.capture.SectionMeshData;
 import com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder;
+import com.nvidia.rtxremix.forge.texture.BlockTextureManager;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.AfterEach;
@@ -15,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.lwjgl.system.MemoryUtil;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -193,21 +197,93 @@ public class AtlasAnimationForwarderTest {
         assertEquals(com.nvidia.rtxremix.TextureFormat.RGBA8_UNORM, AtlasAnimationForwarder.PbrChannel.EMISSIVE.format);
         assertEquals(4, AtlasAnimationForwarder.PbrChannel.EMISSIVE.bytesPerPixel);
 
-        assertEquals(com.nvidia.rtxremix.TextureFormat.RGBA8_UNORM, AtlasAnimationForwarder.PbrChannel.SSS.format);
-        assertEquals(4, AtlasAnimationForwarder.PbrChannel.SSS.bytesPerPixel);
+        assertEquals(com.nvidia.rtxremix.TextureFormat.R8_UNORM, AtlasAnimationForwarder.PbrChannel.SSS.format);
+        assertEquals(1, AtlasAnimationForwarder.PbrChannel.SSS.bytesPerPixel);
+
+        assertEquals(com.nvidia.rtxremix.TextureFormat.RGBA8_UNORM, AtlasAnimationForwarder.PbrChannel.SSS_ALBEDO.format);
+        assertEquals(4, AtlasAnimationForwarder.PbrChannel.SSS_ALBEDO.bytesPerPixel);
 
         AtlasAnimationForwarder.clearSidecarAtlases();
         AtlasAnimationForwarder.registerPbrAtlas(0x3001L, AtlasAnimationForwarder.PbrChannel.NORMAL);
         AtlasAnimationForwarder.registerPbrAtlas(0x3002L, AtlasAnimationForwarder.PbrChannel.ROUGHNESS);
         AtlasAnimationForwarder.registerPbrAtlas(0x3003L, AtlasAnimationForwarder.PbrChannel.METALLIC);
+        AtlasAnimationForwarder.registerPbrAtlas(0x3004L, AtlasAnimationForwarder.PbrChannel.SSS);
+        AtlasAnimationForwarder.registerPbrAtlas(0x3005L, AtlasAnimationForwarder.PbrChannel.SSS_ALBEDO);
 
         assertEquals(0x3001L, AtlasAnimationForwarder.getPbrAtlas(AtlasAnimationForwarder.PbrChannel.NORMAL));
         assertEquals(0x3002L, AtlasAnimationForwarder.getPbrAtlas(AtlasAnimationForwarder.PbrChannel.ROUGHNESS));
         assertEquals(0x3003L, AtlasAnimationForwarder.getPbrAtlas(AtlasAnimationForwarder.PbrChannel.METALLIC));
+        assertEquals(0x3004L, AtlasAnimationForwarder.getPbrAtlas(AtlasAnimationForwarder.PbrChannel.SSS));
+        assertEquals(0x3005L, AtlasAnimationForwarder.getPbrAtlas(AtlasAnimationForwarder.PbrChannel.SSS_ALBEDO));
         assertNull(AtlasAnimationForwarder.getPbrAtlas(AtlasAnimationForwarder.PbrChannel.HEIGHT));
 
         AtlasAnimationForwarder.clearSidecarAtlases();
         assertNull(AtlasAnimationForwarder.getPbrAtlas(AtlasAnimationForwarder.PbrChannel.NORMAL));
+        assertNull(AtlasAnimationForwarder.getPbrAtlas(AtlasAnimationForwarder.PbrChannel.SSS));
+    }
+
+    @Test
+    void testSssAndSssAlbedoAnimatedPatchGeneration() {
+        AtlasAnimationForwarder.clear();
+        AtlasAnimationForwarder.clearSidecarAtlases();
+
+        ResourceLocation testSprite = new ResourceLocation("minecraft", "block/oak_leaves");
+        byte[] sssTable = new byte[16 * 16];
+        java.util.Arrays.fill(sssTable, (byte) 128); // 50% SSS thickness
+        byte[] sssAlbedoTable = new byte[16 * 16 * 4];
+        java.util.Arrays.fill(sssAlbedoTable, (byte) 200); // SSS scattering albedo
+
+        BlockTextureManager.AnimatedSpriteLabPBR pbr = new BlockTextureManager.AnimatedSpriteLabPBR(
+                null, null, null, 16, 16,
+                null, null, null, sssTable, 16, 16,
+                sssAlbedoTable, 16, 16,
+                false, true
+        );
+
+        AtlasAnimationForwarder.initLabPBR(Map.of(testSprite, pbr));
+        AtlasAnimationForwarder.registerPbrAtlas(0x5001L, AtlasAnimationForwarder.PbrChannel.SSS);
+        AtlasAnimationForwarder.registerPbrAtlas(0x5002L, AtlasAnimationForwarder.PbrChannel.SSS_ALBEDO);
+
+        java.nio.ByteBuffer nativeImg = org.lwjgl.system.MemoryUtil.memAlloc(16 * 16 * 4);
+        try {
+            long ptr = org.lwjgl.system.MemoryUtil.memAddress(nativeImg);
+            AtlasAnimationForwarder.beginAtlasUpload(TextureAtlas.LOCATION_BLOCKS);
+            AtlasAnimationForwarder.addPatch(testSprite, 0, 0, 0, 0, 16, 16, 16, 16, ptr, 64);
+            AtlasAnimationForwarder.endAtlasUpload();
+
+            // Intercept updateTextureFromMemory call
+            java.util.concurrent.atomic.AtomicReference<TexturePatchInfo> capturedInfo = new java.util.concurrent.atomic.AtomicReference<>();
+            AtlasAnimationForwarder.flushWithDispatcher(capturedInfo::set, 0x1000L, 0L);
+
+            TexturePatchInfo info = capturedInfo.get();
+            assertNotNull(info, "TexturePatchInfo must be dispatched to API");
+            assertNotNull(info.entries, "Entries must not be null");
+
+            // Should have 3 entries: Albedo (0x1000L), SSS thickness (0x5001L), SSS albedo (0x5002L)
+            assertEquals(3, info.entries.length, "Must generate batches for Albedo, SSS thickness, and SSS albedo");
+
+            boolean foundSss = false;
+            boolean foundSssAlbedo = false;
+            for (TextureBatchEntry entry : info.entries) {
+                if (entry.handle == 0x5001L) {
+                    foundSss = true;
+                    assertEquals(1, entry.patches.length);
+                    assertEquals(com.nvidia.rtxremix.TextureFormat.R8_UNORM, entry.patches[0].format);
+                    assertEquals(16, entry.patches[0].rowPitch); // 16 * 1 byte/pixel for R8 SSS thickness
+                } else if (entry.handle == 0x5002L) {
+                    foundSssAlbedo = true;
+                    assertEquals(1, entry.patches.length);
+                    assertEquals(com.nvidia.rtxremix.TextureFormat.RGBA8_UNORM, entry.patches[0].format);
+                    assertEquals(64, entry.patches[0].rowPitch); // 16 * 4 bytes/pixel for RGBA8 SSS albedo
+                }
+            }
+            assertTrue(foundSss, "SSS thickness batch entry must be present");
+            assertTrue(foundSssAlbedo, "SSS albedo batch entry must be present");
+        } finally {
+            org.lwjgl.system.MemoryUtil.memFree(nativeImg);
+            AtlasAnimationForwarder.clear();
+            AtlasAnimationForwarder.clearSidecarAtlases();
+        }
     }
 
     @Test
@@ -272,6 +348,78 @@ public class AtlasAnimationForwarderTest {
         }
         for (java.nio.ByteBuffer b : buffers) {
             com.nvidia.rtxremix.forge.util.DirectBufferPool.release(b);
+        }
+    }
+
+    @Test
+    void testSssMaterialBindingAndCleanup() {
+        BlockTextureManager btm = BlockTextureManager.get();
+        assertNotNull(btm);
+
+        // Initially null before materials created
+        btm.clearAtlasMaterialsSSS();
+        assertNull(btm.getAtlasMaterialSSS(BlockTextureManager.L_SOLID));
+        assertNull(btm.getAtlasMaterialSSS(BlockTextureManager.L_CUTOUT));
+        assertNull(btm.getAtlasMaterialSSS(BlockTextureManager.L_CUTOUT_MIPPED));
+
+        // Set SSS materials
+        btm.setAtlasMaterialSSS(BlockTextureManager.L_SOLID, 0x7001L);
+        btm.setAtlasMaterialSSS(BlockTextureManager.L_CUTOUT, 0x7002L);
+        btm.setAtlasMaterialSSS(BlockTextureManager.L_CUTOUT_MIPPED, 0x7003L);
+
+        assertEquals(0x7001L, btm.getAtlasMaterialSSS(BlockTextureManager.L_SOLID));
+        assertEquals(0x7002L, btm.getAtlasMaterialSSS(BlockTextureManager.L_CUTOUT));
+        assertEquals(0x7003L, btm.getAtlasMaterialSSS(BlockTextureManager.L_CUTOUT_MIPPED));
+
+        // Clean reload
+        btm.clearAtlasMaterialsSSS();
+        assertNull(btm.getAtlasMaterialSSS(BlockTextureManager.L_SOLID));
+        assertNull(btm.getAtlasMaterialSSS(BlockTextureManager.L_CUTOUT));
+        assertNull(btm.getAtlasMaterialSSS(BlockTextureManager.L_CUTOUT_MIPPED));
+    }
+
+    @Test
+    void testSssFallbackWhenNoSidecars() {
+        AtlasAnimationForwarder.clear();
+        AtlasAnimationForwarder.clearSidecarAtlases();
+
+        ResourceLocation genericSprite = new ResourceLocation("minecraft", "block/stone");
+        // No sidecars in PBR map
+        AtlasAnimationForwarder.initLabPBR(java.util.Collections.emptyMap());
+        AtlasAnimationForwarder.registerPbrAtlas(0x6001L, AtlasAnimationForwarder.PbrChannel.SSS);
+        AtlasAnimationForwarder.registerPbrAtlas(0x6002L, AtlasAnimationForwarder.PbrChannel.SSS_ALBEDO);
+
+        java.nio.ByteBuffer nativeImg = org.lwjgl.system.MemoryUtil.memAlloc(16 * 16 * 4);
+        try {
+            long ptr = org.lwjgl.system.MemoryUtil.memAddress(nativeImg);
+            AtlasAnimationForwarder.beginAtlasUpload(TextureAtlas.LOCATION_BLOCKS);
+            AtlasAnimationForwarder.addPatch(genericSprite, 0, 0, 0, 0, 16, 16, 16, 16, ptr, 64);
+            AtlasAnimationForwarder.endAtlasUpload();
+
+            java.util.concurrent.atomic.AtomicReference<com.nvidia.rtxremix.TexturePatchInfo> captured = new java.util.concurrent.atomic.AtomicReference<>();
+            AtlasAnimationForwarder.flushWithDispatcher(captured::set, 0x1000L);
+
+            com.nvidia.rtxremix.TexturePatchInfo info = captured.get();
+            assertNotNull(info);
+            assertEquals(3, info.entries.length);
+
+            for (com.nvidia.rtxremix.TextureBatchEntry entry : info.entries) {
+                if (entry.handle == 0x6001L) {
+                    // SSS Thickness fallback must be R8 with default thickness 191 (~0.75)
+                    assertEquals(com.nvidia.rtxremix.TextureFormat.R8_UNORM, entry.patches[0].format);
+                    assertEquals(16, entry.patches[0].rowPitch);
+                    byte val = entry.patches[0].pixelData.get(0);
+                    assertEquals((byte) 191, val, "Default SSS thickness must be 191");
+                } else if (entry.handle == 0x6002L) {
+                    // SSS Albedo fallback must be RGBA8
+                    assertEquals(com.nvidia.rtxremix.TextureFormat.RGBA8_UNORM, entry.patches[0].format);
+                    assertEquals(64, entry.patches[0].rowPitch);
+                }
+            }
+        } finally {
+            org.lwjgl.system.MemoryUtil.memFree(nativeImg);
+            AtlasAnimationForwarder.clear();
+            AtlasAnimationForwarder.clearSidecarAtlases();
         }
     }
 }

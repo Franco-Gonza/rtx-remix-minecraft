@@ -23,33 +23,58 @@ class LabPBRConverterTest {
 
     @Test
     void testF0ToMetallicAndDielectricReflectance() {
-        // Metallic binary threshold
+        // 1. Metallic binary threshold at 230
         assertEquals(0, LabPBRConverter.f0ToMetallic(0), "F0=0 must be dielectric (0)");
-        assertEquals(0, LabPBRConverter.f0ToMetallic(229), "F0=229 below 230 threshold must be dielectric (0)");
+        assertEquals(0, LabPBRConverter.f0ToMetallic(100), "F0=100 must be dielectric (0)");
+        assertEquals(0, LabPBRConverter.f0ToMetallic(229), "F0=229 strictly below 230 threshold must be dielectric (0)");
         assertEquals(255, LabPBRConverter.f0ToMetallic(230), "F0=230 at threshold must be metallic (255)");
         assertEquals(255, LabPBRConverter.f0ToMetallic(255), "F0=255 must be metallic (255)");
 
-        // Dielectric F0 reflectance curve
-        assertEquals(0.0f, LabPBRConverter.f0ToDielectricF0(0), 1e-4f, "g=0 must have F0=0.0");
-        float f0Common = LabPBRConverter.f0ToDielectricF0(115);
-        assertEquals(0.0401f, f0Common, 0.002f, "g=115 must map to standard ~0.04 dielectric reflectance");
-        float f0Gem = LabPBRConverter.f0ToDielectricF0(229);
-        assertEquals(0.080f, f0Gem, 0.001f, "g=229 must map to max dielectric 0.08 F0");
+        // 2. LabPBR 1.3 linear dielectric F0 reflectance curve: F0 = g / 255.0f
+        assertEquals(0.0f, LabPBRConverter.f0ToDielectricF0(0), 1e-5f, "g=0 must have F0=0.0");
+        assertEquals(10.0f / 255.0f, LabPBRConverter.f0ToDielectricF0(10), 1e-5f, "g=10 must map to 10/255 F0");
+        assertEquals(128.0f / 255.0f, LabPBRConverter.f0ToDielectricF0(128), 1e-5f, "g=128 must map linearly to 128/255 F0");
+        assertEquals(229.0f / 255.0f, LabPBRConverter.f0ToDielectricF0(229), 1e-5f, "g=229 must map linearly to 229/255 F0");
         assertEquals(1.0f, LabPBRConverter.f0ToDielectricF0(230), "Conductors >= 230 must return 1.0 F0");
+        assertEquals(1.0f, LabPBRConverter.f0ToDielectricF0(255), "Generic conductor 255 must return 1.0 F0");
 
-        // Dielectric IOR computation
-        float iorWater = LabPBRConverter.f0ToDielectricIOR(57);
-        assertEquals(1.33f, iorWater, 0.05f, "g=57 (F0~0.02) should calculate water IOR ~1.33");
-        float iorStandard = LabPBRConverter.f0ToDielectricIOR(115);
-        assertEquals(1.50f, iorStandard, 0.03f, "g=115 (F0~0.04) should calculate standard mineral IOR ~1.50");
+        // 3. Dielectric IOR calculation: IOR = (1 + sqrt(F0)) / (1 - sqrt(F0))
+        assertEquals(1.0f, LabPBRConverter.f0ToDielectricIOR(0), 1e-4f, "g=0 (F0=0) must have air IOR = 1.0");
+        float ior10 = LabPBRConverter.f0ToDielectricIOR(10);
+        float expectedIor10 = (float) ((1.0 + Math.sqrt(10.0 / 255.0)) / (1.0 - Math.sqrt(10.0 / 255.0)));
+        assertEquals(expectedIor10, ior10, 1e-3f, "g=10 must match Fresnel IOR formula");
+        float ior128 = LabPBRConverter.f0ToDielectricIOR(128);
+        float expectedIor128 = (float) ((1.0 + Math.sqrt(128.0 / 255.0)) / (1.0 - Math.sqrt(128.0 / 255.0)));
+        assertEquals(expectedIor128, ior128, 1e-3f, "g=128 must match Fresnel IOR formula");
+        float ior229 = LabPBRConverter.f0ToDielectricIOR(229);
+        float expectedIor229 = (float) ((1.0 + Math.sqrt(229.0 / 255.0)) / (1.0 - Math.sqrt(229.0 / 255.0)));
+        assertEquals(expectedIor229, ior229, 0.05f, "g=229 must match Fresnel IOR formula ~37.2");
+        assertTrue(Float.isInfinite(LabPBRConverter.f0ToDielectricIOR(230)), "Conductors >= 230 must yield infinite IOR");
+        assertTrue(Float.isInfinite(LabPBRConverter.f0ToDielectricIOR(255)), "Conductor 255 must yield infinite IOR");
 
-        // LabPBR 1.3 metal profile classification
+        // 4. LabPBR 1.3 metal profile classification (230..255)
+        assertFalse(LabPBRConverter.isMetallic(0));
         assertFalse(LabPBRConverter.isMetallic(229));
         assertTrue(LabPBRConverter.isMetallic(230));
+        assertTrue(LabPBRConverter.isMetallic(255));
+
+        assertEquals("Dielectric", LabPBRConverter.getMetalName(0));
+        assertEquals("Dielectric", LabPBRConverter.getMetalName(100));
+        assertEquals("Dielectric", LabPBRConverter.getMetalName(229));
+
         assertEquals("Iron", LabPBRConverter.getMetalName(230));
         assertEquals("Gold", LabPBRConverter.getMetalName(231));
+        assertEquals("Aluminium", LabPBRConverter.getMetalName(232));
+        assertEquals("Chrome", LabPBRConverter.getMetalName(233));
         assertEquals("Copper", LabPBRConverter.getMetalName(234));
-        assertEquals("Dielectric", LabPBRConverter.getMetalName(115));
+        assertEquals("Lead", LabPBRConverter.getMetalName(235));
+        assertEquals("Platinum", LabPBRConverter.getMetalName(236));
+        assertEquals("Silver", LabPBRConverter.getMetalName(237));
+
+        for (int m = 238; m <= 254; m++) {
+            assertEquals("Reserved Conductor", LabPBRConverter.getMetalName(m), "Metal ID " + m + " should be Reserved Conductor");
+        }
+        assertEquals("Generic Conductor", LabPBRConverter.getMetalName(255));
     }
 
     @Test
@@ -57,6 +82,8 @@ class LabPBRConverterTest {
         assertEquals(0, LabPBRConverter.sssIntensity(0), "Porosity < 65 must have 0 SSS intensity");
         assertEquals(0, LabPBRConverter.sssIntensity(64), "Porosity 64 must have 0 SSS intensity");
         assertEquals(0, LabPBRConverter.sssIntensity(65), "Threshold 65 maps to 0");
+        int midSss = LabPBRConverter.sssIntensity(160);
+        assertEquals((160 - 65) * 255 / 190, midSss, "B=160 should map linearly in (b-65)*255/190");
         assertEquals(255, LabPBRConverter.sssIntensity(255), "Maximum 255 maps to 255");
 
         NativeImage sImg = new NativeImage(1, 1, false);
@@ -66,13 +93,10 @@ class LabPBRConverterTest {
             sImg.setPixelRGBA(0, 0, 0xFFA00000);
             assertTrue(LabPBRConverter.hasSSSData(sImg), "sImg with B=160 must detect SSS data");
 
-            byte[] sssAtlas = new byte[4];
+            byte[] sssAtlas = new byte[1];
             LabPBRConverter.blitSSS(sssAtlas, 1, sImg, 0, 0, 1, 1);
             int expectedIntensity = (160 - 65) * 255 / 190;
-            assertEquals((byte) expectedIntensity, sssAtlas[0], "SSS R channel should match intensity");
-            assertEquals((byte) expectedIntensity, sssAtlas[1], "SSS G channel should match intensity");
-            assertEquals((byte) expectedIntensity, sssAtlas[2], "SSS B channel should match intensity");
-            assertEquals((byte) 255, sssAtlas[3], "SSS Alpha must be 255");
+            assertEquals((byte) expectedIntensity, sssAtlas[0], "SSS R8 channel should match intensity");
         } finally {
             sImg.close();
         }

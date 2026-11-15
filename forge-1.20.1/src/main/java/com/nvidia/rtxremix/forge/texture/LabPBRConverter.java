@@ -39,23 +39,35 @@ public final class LabPBRConverter {
     }
 
     /**
-     * Converts LabPBR green channel (0-229) to dielectric specular reflectance F0 in [0.0, 0.08].
-     * Values >= 230 represent conductors and return 1.0f.
+     * Converts LabPBR 1.3 green channel (0-229) to dielectric specular reflectance F0 linearly:
+     * F0 = g / 255.0f.
+     * Values 230..255 represent conductors and return 1.0f.
+     *
+     * <p>API LIMITATION NOTE:
+     * While LabPBR 1.3 encodes dielectric F0 linearly in [0.0, ~0.898] (g/255.0f),
+     * the RTX Remix C API (remixapi_MaterialInfoOpaqueEXT) is currently based on the
+     * glTF 2.0 metallic-roughness model (metallicTexture, roughnessTexture) without
+     * KHR_materials_ior or KHR_materials_specular extensions. Therefore, dielectric F0
+     * cannot be routed directly into Remix's opaque material pipeline and must use the
+     * standard dielectric metallic = 0.0 default (fixed F0 = 0.04 in Remix path tracer).
      */
     public static float f0ToDielectricF0(int g) {
         if (g >= 230) return 1.0f;
-        return (Math.max(0, g) / 229.0f) * 0.08f;
+        if (g <= 0) return 0.0f;
+        return (float) g / 255.0f;
     }
 
     /**
-     * Calculates the dielectric Index of Refraction (IOR) from LabPBR green channel reflectance F0.
-     * Common values: g=57 -> F0=0.02 (water IOR 1.33), g=115 -> F0=0.04 (standard dielectric IOR 1.50).
+     * Calculates the dielectric Index of Refraction (IOR) from LabPBR 1.3 reflectance F0.
+     * Fresnel formula: F0 = ((IOR - 1) / (IOR + 1))^2 ==> IOR = (1 + sqrt(F0)) / (1 - sqrt(F0)).
+     * For g=0, F0=0.0 ==> IOR=1.0 (air/vacuum).
+     * For conductors (g >= 230), IOR is complex (n + ik), returning Float.POSITIVE_INFINITY.
      */
     public static float f0ToDielectricIOR(int g) {
+        if (g >= 230) return Float.POSITIVE_INFINITY;
         float f0 = f0ToDielectricF0(g);
-        if (f0 >= 0.999f) return Float.POSITIVE_INFINITY;
         double sqrtF0 = Math.sqrt(f0);
-        return (float) ((1.0 + sqrtF0) / Math.max(0.0001, 1.0 - sqrtF0));
+        return (float) ((1.0 + sqrtF0) / Math.max(1e-5, 1.0 - sqrtF0));
     }
 
     /**
@@ -67,6 +79,8 @@ public final class LabPBRConverter {
 
     /**
      * Identifies the LabPBR 1.3 standard metal profile corresponding to the green channel.
+     * 230: Iron, 231: Gold, 232: Aluminium, 233: Chrome, 234: Copper, 235: Lead,
+     * 236: Platinum, 237: Silver, 238..254: Reserved Conductor, 255: Generic Conductor.
      */
     public static String getMetalName(int g) {
         return switch (g) {
@@ -78,7 +92,11 @@ public final class LabPBRConverter {
             case 235 -> "Lead";
             case 236 -> "Platinum";
             case 237 -> "Silver";
-            default -> (g >= 238 && g <= 255) ? "Generic Conductor" : "Dielectric";
+            default -> {
+                if (g >= 238 && g <= 254) yield "Reserved Conductor";
+                if (g == 255) yield "Generic Conductor";
+                yield "Dielectric";
+            }
         };
     }
 
@@ -149,17 +167,12 @@ public final class LabPBRConverter {
         }
     }
 
-    /** Blits SSS intensity as RGBA8 (R=G=B=intensity, A=255) from _s blue channel. */
+    /** Blits SSS thickness/intensity as R8 (1 byte per pixel) from _s blue channel (porosity >= 65). */
     public static void blitSSS(byte[] dst, int atlasW, NativeImage s, int ox, int oy, int w, int h) {
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 int abgr = s.getPixelRGBA(x % s.getWidth(), y % s.getHeight());
-                byte val = (byte) sssIntensity((abgr >> 16) & 0xFF);
-                int idx = ((oy + y) * atlasW + (ox + x)) * 4;
-                dst[idx]     = val;
-                dst[idx + 1] = val;
-                dst[idx + 2] = val;
-                dst[idx + 3] = (byte) 255;
+                dst[(oy + y) * atlasW + (ox + x)] = (byte) sssIntensity((abgr >> 16) & 0xFF);
             }
         }
     }
@@ -426,6 +439,67 @@ public final class LabPBRConverter {
             }
         }
         return table;
+    }
+
+    public static byte[] buildSingleScatteringAlbedoTable(NativeImage sss) {
+        int w = sss.getWidth(), h = sss.getHeight();
+        byte[] table = new byte[w * h * 4];
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int abgr = sss.getPixelRGBA(x, y);
+                int idx = (y * w + x) * 4;
+                table[idx]     = (byte) (abgr & 0xFF);
+                table[idx + 1] = (byte) ((abgr >> 8) & 0xFF);
+                table[idx + 2] = (byte) ((abgr >> 16) & 0xFF);
+                table[idx + 3] = (byte) 255;
+            }
+        }
+        return table;
+    }
+
+    public static void copySssIntensityPatch(ByteBuffer dst, byte[] sssTable, int tableW, int tableH,
+                                             int srcX, int srcY, int w, int h) {
+        for (int y = 0; y < h; y++) {
+            int tY = wrapNonNegative(srcY + y, tableH);
+            int tRow = tY * tableW;
+            for (int x = 0; x < w; x++) {
+                int tX = wrapNonNegative(srcX + x, tableW);
+                byte val = sssTable[tRow + tX];
+                dst.put(val).put(val).put(val).put((byte) 255);
+            }
+        }
+    }
+
+    public static byte[] buildSssAlbedoTable(NativeImage sss) {
+        return buildSingleScatteringAlbedoTable(sss);
+    }
+
+    public static void copySssAlbedoPatch(ByteBuffer dst, byte[] sssAlbedoTable, int tableW, int tableH,
+                                          int srcX, int srcY, int w, int h) {
+        copySssAlbedoPatch(dst, sssAlbedoTable, tableW, tableH, null, 0, 0, srcX, srcY, w, h);
+    }
+
+    public static void copySssAlbedoPatch(ByteBuffer dst, byte[] sssAlbedoTable, int tableW, int tableH,
+                                          byte[] aoTable, int aoW, int aoH,
+                                          int srcX, int srcY, int w, int h) {
+        for (int y = 0; y < h; y++) {
+            int tY = wrapNonNegative(srcY + y, tableH);
+            int tRow = tY * tableW * 4;
+            int aoRow = (aoTable != null) ? wrapNonNegative(srcY + y, aoH) * aoW : 0;
+            for (int x = 0; x < w; x++) {
+                int tX = wrapNonNegative(srcX + x, tableW) * 4;
+                int r = sssAlbedoTable[tRow + tX] & 0xFF;
+                int g = sssAlbedoTable[tRow + tX + 1] & 0xFF;
+                int b = sssAlbedoTable[tRow + tX + 2] & 0xFF;
+                if (aoTable != null) {
+                    int ao = aoTable[aoRow + wrapNonNegative(srcX + x, aoW)] & 0xFF;
+                    r = (r * ao) / 255;
+                    g = (g * ao) / 255;
+                    b = (b * ao) / 255;
+                }
+                dst.put((byte) r).put((byte) g).put((byte) b).put((byte) 255);
+            }
+        }
     }
 
     public static boolean hasSSSData(NativeImage s) {
