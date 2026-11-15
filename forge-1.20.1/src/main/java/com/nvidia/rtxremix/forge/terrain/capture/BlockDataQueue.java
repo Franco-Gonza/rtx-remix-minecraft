@@ -123,6 +123,8 @@ public final class BlockDataQueue {
 
         long bytes = estimateBytes(data);
         if (!acquireCapacity(state, data, capture, bytes)) {
+            state.evictedSections.add(new EvictedSection(
+                    data.sectionPos().getX(), data.sectionPos().getY(), data.sectionPos().getZ()));
             releaseMeshData(data);
             return;
         }

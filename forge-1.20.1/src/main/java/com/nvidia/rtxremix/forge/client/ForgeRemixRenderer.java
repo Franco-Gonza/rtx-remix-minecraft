@@ -778,9 +778,17 @@ public final class ForgeRemixRenderer {
     }
 
     private void installCompletedSections() {
+        if (terrainAtlasTexture == 0 || solidTerrainMaterial == 0) {
+            return;
+        }
+
         long startTime = System.nanoTime();
         boolean loadingScreen = (client.screen instanceof net.minecraft.client.gui.screens.ReceivingLevelScreen);
-        long budget = loadingScreen ? 25_000_000L : INSTALL_BUDGET_NS;
+        int pending = com.nvidia.rtxremix.forge.terrain.capture.BlockDataQueue.pendingCount();
+        long budget = loadingScreen ? 50_000_000L : INSTALL_BUDGET_NS;
+        if (!loadingScreen && pending > 16) {
+            budget = Math.max(budget, Math.min(25_000_000L, budget + (pending / 8) * 1_000_000L));
+        }
 
         com.nvidia.rtxremix.forge.terrain.capture.BlockDataQueue.QueuedCapture capture;
         while ((capture = com.nvidia.rtxremix.forge.terrain.capture.BlockDataQueue.poll()) != null) {
@@ -867,6 +875,14 @@ public final class ForgeRemixRenderer {
                         } else {
                             matHandle = solidTerrainMaterial != 0 ? solidTerrainMaterial : defaultTerrainMaterial;
                             blendPNext = solidBlendPNext;
+                        }
+
+                        if (matHandle == 0) {
+                            matHandle = solidTerrainMaterial != 0 ? solidTerrainMaterial : defaultTerrainMaterial;
+                        }
+                        if (matHandle == 0) {
+                            LOGGER.warn("Skipping surface with 0 material handle in section {}", pos);
+                            continue;
                         }
 
                         MeshInfoSurfaceTriangles surf = new MeshInfoSurfaceTriangles();

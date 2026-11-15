@@ -363,13 +363,32 @@ public final class BlockQuadEmitter {
         float ny = (byte) ((packedNormal >> 8) & 0xFF) / 127f;
         float nz = (byte) ((packedNormal >> 16) & 0xFF) / 127f;
         if (nx * nx + ny * ny + nz * nz < 0.01f) {
-            float e1x = tempPositions[3] - tempPositions[0], e1y = tempPositions[4] - tempPositions[1], e1z = tempPositions[5] - tempPositions[2];
-            float e2x = tempPositions[6] - tempPositions[0], e2y = tempPositions[7] - tempPositions[1], e2z = tempPositions[8] - tempPositions[2];
-            nx = e1y * e2z - e1z * e2y;
-            ny = e1z * e2x - e1x * e2z;
-            nz = e1x * e2y - e1y * e2x;
-            float len = (float) Math.sqrt(nx * nx + ny * ny + nz * nz);
-            if (len > 0.001f) { nx /= len; ny /= len; nz /= len; }
+            Direction dir = bq.getDirection();
+            if (dir != null) {
+                nx = dir.getStepX();
+                ny = dir.getStepY();
+                nz = dir.getStepZ();
+            } else {
+                float d1x = tempPositions[6] - tempPositions[0];
+                float d1y = tempPositions[7] - tempPositions[1];
+                float d1z = tempPositions[8] - tempPositions[2];
+                float d2x = tempPositions[9] - tempPositions[3];
+                float d2y = tempPositions[10] - tempPositions[4];
+                float d2z = tempPositions[11] - tempPositions[5];
+                nx = d1y * d2z - d1z * d2y;
+                ny = d1z * d2x - d1x * d2z;
+                nz = d1x * d2y - d1y * d2x;
+                float len = (float) Math.sqrt(nx * nx + ny * ny + nz * nz);
+                if (len > 0.001f) {
+                    nx /= len;
+                    ny /= len;
+                    nz /= len;
+                } else {
+                    nx = 0.0f;
+                    ny = 1.0f;
+                    nz = 0.0f;
+                }
+            }
         }
 
         int color = 0xFFFFFFFF;

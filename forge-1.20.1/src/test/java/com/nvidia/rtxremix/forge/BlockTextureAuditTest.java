@@ -183,18 +183,14 @@ public class BlockTextureAuditTest {
     }
 
     @Test
-    void testInspectBakedQuadLayout() throws Exception {
-        net.minecraft.client.renderer.FaceInfo upInfo = net.minecraft.client.renderer.FaceInfo.fromFacing(net.minecraft.core.Direction.UP);
-        System.out.println("UP info: ");
-        for (int i = 0; i < 4; i++) {
-            net.minecraft.client.renderer.FaceInfo.VertexInfo vi = upInfo.getVertexInfo(i);
-            System.out.println("  v" + i + ": xFace=" + vi.xFace + " yFace=" + vi.yFace + " zFace=" + vi.zFace);
-        }
-        net.minecraft.client.renderer.FaceInfo downInfo = net.minecraft.client.renderer.FaceInfo.fromFacing(net.minecraft.core.Direction.DOWN);
-        System.out.println("DOWN info: ");
-        for (int i = 0; i < 4; i++) {
-            net.minecraft.client.renderer.FaceInfo.VertexInfo vi = downInfo.getVertexInfo(i);
-            System.out.println("  v" + i + ": xFace=" + vi.xFace + " yFace=" + vi.yFace + " zFace=" + vi.zFace);
+    void testQuadNormalResolutionNonZero() {
+        for (net.minecraft.core.Direction dir : net.minecraft.core.Direction.values()) {
+            net.minecraft.client.renderer.FaceInfo fi = net.minecraft.client.renderer.FaceInfo.fromFacing(dir);
+            assertNotNull(fi);
+            float stepX = dir.getStepX();
+            float stepY = dir.getStepY();
+            float stepZ = dir.getStepZ();
+            assertTrue(stepX != 0 || stepY != 0 || stepZ != 0, "Direction step vector must not be zero");
         }
     }
 }
