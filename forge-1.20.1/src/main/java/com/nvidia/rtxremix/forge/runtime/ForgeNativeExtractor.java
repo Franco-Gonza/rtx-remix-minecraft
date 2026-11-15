@@ -70,16 +70,86 @@ public final class ForgeNativeExtractor {
         }
     }
 
-    private static void ensureConfOptions(Path gameDir) {
-        Path rtxConf = gameDir.resolve("rtx.conf");
-        if (Files.exists(rtxConf)) {
-            try {
-                String content = Files.readString(rtxConf);
-                if (!content.contains("rtx.automation.disableBlockingDialogBoxes")) {
-                    Files.writeString(rtxConf, content + System.lineSeparator() + "# Suppress blocking modal dialog boxes (such as crash report popups)" + System.lineSeparator() + "rtx.automation.disableBlockingDialogBoxes = True" + System.lineSeparator());
-                }
-            } catch (Throwable t) {
-                LOGGER.warn("Failed checking/updating rtx.conf options: {}", t.getMessage());
+    public static void mergeCriticalConfigKeys(Path rtxConf) {
+        if (!Files.exists(rtxConf)) {
+            return;
+        }
+        try {
+            String content = Files.readString(rtxConf);
+            StringBuilder updated = new StringBuilder(content);
+            boolean modified = false;
+
+            if (!content.contains("rtx.automation.disableBlockingDialogBoxes")) {
+                updated.append(System.lineSeparator())
+                       .append("# Suppress blocking modal dialog boxes (such as crash report popups)")
+                       .append(System.lineSeparator())
+                       .append("rtx.automation.disableBlockingDialogBoxes = True")
+                       .append(System.lineSeparator());
+                modified = true;
+            }
+            if (!content.contains("rtx.dlfg.presentOnGraphicsQueue")) {
+                updated.append(System.lineSeparator())
+                       .append("# Frame generation presents on graphics queue for overlay compatibility")
+                       .append(System.lineSeparator())
+                       .append("rtx.dlfg.presentOnGraphicsQueue = True")
+                       .append(System.lineSeparator());
+                modified = true;
+            }
+            if (!content.contains("rtx.qualityDLSS")) {
+                updated.append(System.lineSeparator())
+                       .append("# DLSS 3 Super Resolution: 0 = Off, 1 = Ultra Performance, 2 = Performance, 3 = Balanced, 4 = Quality, 5 = DLAA")
+                       .append(System.lineSeparator())
+                       .append("rtx.qualityDLSS = 3")
+                       .append(System.lineSeparator());
+                modified = true;
+            }
+            if (!content.contains("rtx.dlfg.enable")) {
+                updated.append(System.lineSeparator())
+                       .append("# DLSS 3 Frame Generation on Ada Lovelace (RTX 40-series)")
+                       .append(System.lineSeparator())
+                       .append("rtx.dlfg.enable = True")
+                       .append(System.lineSeparator());
+                modified = true;
+            }
+            if (!content.contains("rtx.reflex.mode")) {
+                updated.append(System.lineSeparator())
+                       .append("# NVIDIA Reflex Low Latency mode: 0 = Off, 1 = LowLatency (Enabled), 2 = LowLatencyBoost (Enabled + Boost)")
+                       .append(System.lineSeparator())
+                       .append("rtx.reflex.mode = 2")
+                       .append(System.lineSeparator());
+                modified = true;
+            }
+
+            if (modified) {
+                Files.writeString(rtxConf, updated.toString());
+                LOGGER.info("Merged critical DLSS/FG/Reflex configuration keys into {}", rtxConf.toAbsolutePath());
+            }
+        } catch (Throwable t) {
+            LOGGER.warn("Failed checking/updating rtx.conf options for {}: {}", rtxConf, t.getMessage());
+        }
+    }
+
+    public static void ensureConfOptions(Path gameDir) {
+        mergeCriticalConfigKeys(gameDir.resolve("rtx.conf"));
+
+        // Propagate to workspace run/rtx.conf if present
+        Path workspaceRunConf = gameDir.resolve("run").resolve("rtx.conf");
+        if (Files.exists(workspaceRunConf)) {
+            mergeCriticalConfigKeys(workspaceRunConf);
+        }
+        if (gameDir.getParent() != null) {
+            Path parentRunConf = gameDir.getParent().resolve("run").resolve("rtx.conf");
+            if (Files.exists(parentRunConf)) {
+                mergeCriticalConfigKeys(parentRunConf);
+            }
+        }
+
+        // Propagate to %APPDATA%/.minecraft/rtx.conf if present
+        String appData = System.getenv("APPDATA");
+        if (appData != null && !appData.isBlank()) {
+            Path appDataConf = Paths.get(appData, ".minecraft", "rtx.conf");
+            if (Files.exists(appDataConf)) {
+                mergeCriticalConfigKeys(appDataConf);
             }
         }
     }

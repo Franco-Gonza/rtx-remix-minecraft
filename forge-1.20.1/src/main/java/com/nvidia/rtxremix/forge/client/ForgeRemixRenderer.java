@@ -851,15 +851,10 @@ public final class ForgeRemixRenderer {
             drainedCaptures.clear();
             reflagEvictedSections();
 
-            // Always update camera to match the rendered frame before scene submit
-            if (client.gameRenderer != null && client.gameRenderer.getMainCamera() != null) {
-                updateCamera(client.gameRenderer.getMainCamera(), 1.0f);
-            }
-
-            // Finish entity pass and sweep off-screen shadow casters
+            // Finish entity pass and sweep off-screen shadow casters using the frame's interpolated partial ticks
             if (entityPass != null && entitySubmitter != null && client.level != null
                     && client.gameRenderer != null && client.gameRenderer.getMainCamera() != null) {
-                entityPass.finishFrame(client.level, client.getEntityRenderDispatcher(), 1.0f, entitySubmitter, client.gameRenderer.getMainCamera());
+                entityPass.finishFrame(client.level, client.getEntityRenderDispatcher(), lastPartialTicks, entitySubmitter, client.gameRenderer.getMainCamera());
             }
 
             // Draw all active terrain block lights within distance cull
@@ -899,7 +894,7 @@ public final class ForgeRemixRenderer {
 
             // Render particles through RTX Remix
             if (particleRenderer != null && client.gameRenderer != null && client.gameRenderer.getMainCamera() != null) {
-                particleRenderer.render(api, client.gameRenderer.getMainCamera(), 1.0f, cutoutTerrainMaterial);
+                particleRenderer.render(api, client.gameRenderer.getMainCamera(), lastPartialTicks, cutoutTerrainMaterial);
             }
 
             // Forward animated sprite atlas patches to Remix before submitting frame
