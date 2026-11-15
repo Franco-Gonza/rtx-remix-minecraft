@@ -9,6 +9,7 @@ import com.nvidia.rtxremix.TextureBatchEntry;
 import com.nvidia.rtxremix.TextureFormat;
 import com.nvidia.rtxremix.TexturePatch;
 import com.nvidia.rtxremix.TexturePatchInfo;
+import com.nvidia.rtxremix.forge.util.DirectBufferPool;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.resources.ResourceLocation;
 import org.lwjgl.system.MemoryUtil;
@@ -16,8 +17,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 
 /**
  * Forwards animated block and particle atlas texture patches to the RTX Remix runtime.
@@ -25,6 +25,24 @@ import java.util.List;
 public final class AtlasAnimationForwarder {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("rtxremix/AtlasAnimation");
+
+    public enum PbrChannel {
+        ALBEDO(TextureFormat.RGBA8_UNORM, 4),
+        NORMAL(TextureFormat.RGBA8_UNORM, 4),
+        HEIGHT(TextureFormat.R8_UNORM, 1),
+        ROUGHNESS(TextureFormat.R8_UNORM, 1),
+        METALLIC(TextureFormat.R8_UNORM, 1),
+        EMISSIVE(TextureFormat.RGBA8_UNORM, 4),
+        SSS(TextureFormat.RGBA8_UNORM, 4);
+
+        public final int format;
+        public final int bytesPerPixel;
+
+        PbrChannel(int format, int bytesPerPixel) {
+            this.format = format;
+            this.bytesPerPixel = bytesPerPixel;
+        }
+    }
 
     private static volatile boolean active = true;
     private static final int MAX_PENDING_PATCHES = 512;
@@ -39,7 +57,10 @@ public final class AtlasAnimationForwarder {
     private static final TextureBatchEntry blockBatchEntry = new TextureBatchEntry();
     private static final TextureBatchEntry particleBatchEntry = new TextureBatchEntry();
     private static final TexturePatchInfo sharedPatchInfo = new TexturePatchInfo();
+
+    private static final Map<PbrChannel, Long> pbrAtlases = new EnumMap<>(PbrChannel.class);
     private static final List<Long> sidecarPbrAtlases = new ArrayList<>(4);
+    private static Map<ResourceLocation, BlockTextureManager.AnimatedSpriteLabPBR> labPbrMap = Collections.emptyMap();
 
     public record PendingPatch(
             ResourceLocation spriteId,
@@ -55,6 +76,20 @@ public final class AtlasAnimationForwarder {
         }
     }
 
+    public static void initLabPBR(Map<ResourceLocation, BlockTextureManager.AnimatedSpriteLabPBR> map) {
+        labPbrMap = map != null ? map : Collections.emptyMap();
+    }
+
+    public static void registerPbrAtlas(long handle, PbrChannel channel) {
+        if (handle != 0 && channel != null) {
+            pbrAtlases.put(channel, handle);
+        }
+    }
+
+    public static Long getPbrAtlas(PbrChannel channel) {
+        return pbrAtlases.get(channel);
+    }
+
     public static void registerSidecarAtlas(long handle) {
         if (handle != 0 && !sidecarPbrAtlases.contains(handle)) {
             sidecarPbrAtlases.add(handle);
@@ -62,7 +97,21 @@ public final class AtlasAnimationForwarder {
     }
 
     public static void clearSidecarAtlases() {
+        pbrAtlases.clear();
         sidecarPbrAtlases.clear();
+    }
+
+    public static TexturePatch createPatch(int dstX, int dstY, int width, int height,
+                                           ByteBuffer pixelData, int rowPitch, int format) {
+        TexturePatch patch = new TexturePatch();
+        patch.dstX = dstX;
+        patch.dstY = dstY;
+        patch.width = width;
+        patch.height = height;
+        patch.pixelData = pixelData;
+        patch.rowPitch = rowPitch;
+        patch.format = format;
+        return patch;
     }
 
     public static void setActive(boolean isRunning) {

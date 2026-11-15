@@ -17,7 +17,7 @@ config="rtxremix.mixins.json"
 [[dependencies.rtxremix]]
     modId="forge"
     mandatory=true
-    versionRange="[47.3.0,)"
+    versionRange="[47.4.29,)"
     ordering="NONE"
     side="CLIENT"
 

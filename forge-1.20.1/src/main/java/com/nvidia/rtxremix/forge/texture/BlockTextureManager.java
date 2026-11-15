@@ -39,17 +39,52 @@ public class BlockTextureManager {
         }
     }
 
+    public static final class AnimatedSpriteLabPBR {
+        public final byte[] normalTable;      // RGBA8 (4 bytes/pix)
+        public final byte[] aoTable;          // 1 byte/pix (AO from _n.B)
+        public final byte[] heightTable;      // R8 (1 byte/pix from _n.A)
+        public final int nW, nH;
+        public final byte[] sRoughnessTable;  // R8 (1 byte/pix from _s.R)
+        public final byte[] sMetallicTable;   // R8 (1 byte/pix from _s.G)
+        public final byte[] sAlphaTable;      // 1 byte/pix (emissive factor from _s.A)
+        public final byte[] sSssTable;        // 1 byte/pix (SSS intensity from _s.B)
+        public final int sW, sH;
+        public final boolean hasEmissive;
+        public final boolean hasSSS;
+
+        public AnimatedSpriteLabPBR(byte[] normalTable, byte[] aoTable, byte[] heightTable, int nW, int nH,
+                                   byte[] sRoughnessTable, byte[] sMetallicTable, byte[] sAlphaTable, byte[] sSssTable, int sW, int sH,
+                                   boolean hasEmissive, boolean hasSSS) {
+            this.normalTable = normalTable;
+            this.aoTable = aoTable;
+            this.heightTable = heightTable;
+            this.nW = nW;
+            this.nH = nH;
+            this.sRoughnessTable = sRoughnessTable;
+            this.sMetallicTable = sMetallicTable;
+            this.sAlphaTable = sAlphaTable;
+            this.sSssTable = sSssTable;
+            this.sW = sW;
+            this.sH = sH;
+            this.hasEmissive = hasEmissive;
+            this.hasSSS = hasSSS;
+        }
+    }
+
     public record PbrAtlasResult(
             byte[] normalAtlas,
             byte[] heightAtlas,
             byte[] roughnessAtlas,
             byte[] metallicAtlas,
             byte[] emissiveAtlas,
+            byte[] sssAtlas,
+            byte[] sssAlbedoAtlas,
             boolean hasNormal,
             boolean hasHeight,
             boolean hasRoughness,
             boolean hasMetallic,
-            boolean hasEmissive
+            boolean hasEmissive,
+            boolean hasSSS
     ) {}
 
     private static BlockTextureManager INSTANCE = new BlockTextureManager();
@@ -148,7 +183,7 @@ public class BlockTextureManager {
         });
     }
 
-    public Object getAtlasMaterialSSS(int layerType) {
+    public Long getAtlasMaterialSSS(int layerType) {
         return null;
     }
 
@@ -162,6 +197,8 @@ public class BlockTextureManager {
         byte[] roughnessAtlas = new byte[totalPixels];
         byte[] metallicAtlas = new byte[totalPixels];
         byte[] emissiveAtlas = new byte[totalPixels * 4];
+        byte[] sssAtlas = new byte[totalPixels * 4];
+        byte[] sssAlbedoAtlas = new byte[totalPixels * 4];
 
         // Initialize flat normal: (128, 128, 255, 255)
         for (int i = 0; i < totalPixels; i++) {
@@ -182,12 +219,27 @@ public class BlockTextureManager {
         // Initialize metallic to 0 (dielectric)
         Arrays.fill(metallicAtlas, (byte) 0);
 
+        // Initialize SSS thickness to 191 (~0.75 default transmission distance) and SSS albedo
+        byte defaultThickness = (byte) Math.round(0.75f * 255.0f);
+        for (int i = 0; i < totalPixels; i++) {
+            int idx4 = i * 4;
+            sssAtlas[idx4]     = defaultThickness;
+            sssAtlas[idx4 + 1] = defaultThickness;
+            sssAtlas[idx4 + 2] = defaultThickness;
+            sssAtlas[idx4 + 3] = (byte) 255;
+        }
+        if (albedoRGBA != null) {
+            System.arraycopy(albedoRGBA, 0, sssAlbedoAtlas, 0, Math.min(albedoRGBA.length, sssAlbedoAtlas.length));
+        }
+
         boolean hasNormal = false;
         boolean hasHeight = false;
         boolean hasRoughness = false;
         boolean hasMetallic = false;
         boolean hasEmissive = false;
+        boolean hasSSS = false;
         int pbrSpriteCount = 0;
+        Map<ResourceLocation, AnimatedSpriteLabPBR> animatedPbrMap = new java.util.HashMap<>();
 
         Minecraft mc = Minecraft.getInstance();
         if (mc != null && mc.getResourceManager() != null && atlas != null) {
@@ -213,6 +265,7 @@ public class BlockTextureManager {
                         if (albedoRGBA != null) {
                             LabPBRConverter.applyAO(albedoRGBA, atlasW, nImg, ox, oy, w, h);
                         }
+                        LabPBRConverter.applyAO(sssAlbedoAtlas, atlasW, nImg, ox, oy, w, h);
                         hasNormal = true;
                         hasHeight = true;
                         spriteHasPbr = true;
@@ -229,6 +282,45 @@ public class BlockTextureManager {
                             LabPBRConverter.blitEmissive(emissiveAtlas, atlasW, albedoRGBA, sImg, ox, oy, w, h, 0.0f, 1.0f);
                             hasEmissive = true;
                         }
+
+                        if (LabPBRConverter.hasSSSData(sImg)) {
+                            LabPBRConverter.blitSSS(sssAtlas, atlasW, sImg, ox, oy, w, h);
+                            hasSSS = true;
+                        }
+                    }
+
+                    if (sssImg != null) {
+                        LabPBRConverter.blitSingleScatteringAlbedo(sssAlbedoAtlas, atlasW, sssImg, ox, oy, w, h);
+                        hasSSS = true;
+                        spriteHasPbr = true;
+                    }
+
+                    if (spriteHasPbr && sprite.contents() != null && sprite.contents().getOriginalImage() != null) {
+                        int origH = sprite.contents().getOriginalImage().getHeight();
+                        int frameH = sprite.contents().height();
+                        if (origH > frameH) {
+                            byte[] normTab = (nImg != null) ? LabPBRConverter.buildNormalTable(nImg) : null;
+                            byte[] aoTab = (nImg != null) ? LabPBRConverter.buildAOTable(nImg) : null;
+                            byte[] heightTab = (nImg != null) ? LabPBRConverter.buildHeightTable(nImg) : null;
+                            int nw = (nImg != null) ? nImg.getWidth() : 0;
+                            int nh = (nImg != null) ? nImg.getHeight() : 0;
+
+                            byte[] rTab = (sImg != null) ? LabPBRConverter.buildSRoughnessTable(sImg) : null;
+                            byte[] mTab = (sImg != null) ? LabPBRConverter.buildSMetallicTable(sImg) : null;
+                            byte[] aTab = (sImg != null) ? LabPBRConverter.buildSAlphaTable(sImg) : null;
+                            byte[] sssTab = (sImg != null) ? LabPBRConverter.buildSSssTable(sImg) : null;
+                            int sw = (sImg != null) ? sImg.getWidth() : 0;
+                            int sh = (sImg != null) ? sImg.getHeight() : 0;
+
+                            boolean emissive = (sImg != null) && LabPBRConverter.hasEmissiveData(sImg);
+                            boolean sssFlag = (sImg != null) && LabPBRConverter.hasSSSData(sImg);
+
+                            animatedPbrMap.put(loc, new AnimatedSpriteLabPBR(
+                                    normTab, aoTab, heightTab, nw, nh,
+                                    rTab, mTab, aTab, sssTab, sw, sh,
+                                    emissive, sssFlag
+                            ));
+                        }
                     }
                 } finally {
                     if (nImg != null) nImg.close();
@@ -242,10 +334,12 @@ public class BlockTextureManager {
             }
         }
 
-        LOGGER.info("Built LabPBR terrain atlas ({} sprites with PBR sidecars, normal={}, height={}, roughness={}, metallic={}, emissive={})",
-                pbrSpriteCount, hasNormal, hasHeight, hasRoughness, hasMetallic, hasEmissive);
+        LOGGER.info("Built LabPBR terrain atlas ({} sprites with PBR sidecars, normal={}, height={}, roughness={}, metallic={}, emissive={}, sss={})",
+                pbrSpriteCount, hasNormal, hasHeight, hasRoughness, hasMetallic, hasEmissive, hasSSS);
+
+        AtlasAnimationForwarder.initLabPBR(animatedPbrMap);
 
         return new PbrAtlasResult(normalAtlas, heightAtlas, roughnessAtlas, metallicAtlas, emissiveAtlas,
-                hasNormal, hasHeight, hasRoughness, hasMetallic, hasEmissive);
+                sssAtlas, sssAlbedoAtlas, hasNormal, hasHeight, hasRoughness, hasMetallic, hasEmissive, hasSSS);
     }
 }

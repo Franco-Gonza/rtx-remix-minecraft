@@ -38,6 +38,50 @@ public final class LabPBRConverter {
         return g >= 230 ? 255 : 0;
     }
 
+    /**
+     * Converts LabPBR green channel (0-229) to dielectric specular reflectance F0 in [0.0, 0.08].
+     * Values >= 230 represent conductors and return 1.0f.
+     */
+    public static float f0ToDielectricF0(int g) {
+        if (g >= 230) return 1.0f;
+        return (Math.max(0, g) / 229.0f) * 0.08f;
+    }
+
+    /**
+     * Calculates the dielectric Index of Refraction (IOR) from LabPBR green channel reflectance F0.
+     * Common values: g=57 -> F0=0.02 (water IOR 1.33), g=115 -> F0=0.04 (standard dielectric IOR 1.50).
+     */
+    public static float f0ToDielectricIOR(int g) {
+        float f0 = f0ToDielectricF0(g);
+        if (f0 >= 0.999f) return Float.POSITIVE_INFINITY;
+        double sqrtF0 = Math.sqrt(f0);
+        return (float) ((1.0 + sqrtF0) / Math.max(0.0001, 1.0 - sqrtF0));
+    }
+
+    /**
+     * Checks whether the LabPBR green channel value corresponds to a metallic conductor (>= 230).
+     */
+    public static boolean isMetallic(int g) {
+        return g >= 230;
+    }
+
+    /**
+     * Identifies the LabPBR 1.3 standard metal profile corresponding to the green channel.
+     */
+    public static String getMetalName(int g) {
+        return switch (g) {
+            case 230 -> "Iron";
+            case 231 -> "Gold";
+            case 232 -> "Aluminium";
+            case 233 -> "Chrome";
+            case 234 -> "Copper";
+            case 235 -> "Lead";
+            case 236 -> "Platinum";
+            case 237 -> "Silver";
+            default -> (g >= 238 && g <= 255) ? "Generic Conductor" : "Dielectric";
+        };
+    }
+
     public static int sssIntensity(int b) {
         return b >= 65 ? clamp255((b - 65) * 255 / 190) : 0;
     }
@@ -159,6 +203,110 @@ public final class LabPBRConverter {
 
     // --- Animation and Patch Helpers ---
 
+    public static void applyAOToPatch(ByteBuffer dst,
+                                     ByteBuffer src, int srcRowPitch,
+                                     byte[] aoTable, int aoW, int aoH,
+                                     int aoX, int aoY,
+                                     int w, int h) {
+        for (int y = 0; y < h; y++) {
+            int sRow = (aoY + y) * srcRowPitch + aoX * 4;
+            int aoRow = wrapNonNegative(aoY + y, aoH) * aoW;
+            for (int x = 0; x < w; x++) {
+                int ao = aoTable != null ? (aoTable[aoRow + wrapNonNegative(aoX + x, aoW)] & 0xFF) : 255;
+                int si = sRow + x * 4;
+                int r = ((src.get(si)     & 0xFF) * ao) / 255;
+                int g = ((src.get(si + 1) & 0xFF) * ao) / 255;
+                int b = ((src.get(si + 2) & 0xFF) * ao) / 255;
+                byte a = src.get(si + 3);
+                dst.put((byte) r).put((byte) g).put((byte) b).put(a);
+            }
+        }
+    }
+
+    public static void copyAlbedoPatch(ByteBuffer dst,
+                                       ByteBuffer src, int srcRowPitch,
+                                       int srcX, int srcY,
+                                       int w, int h) {
+        for (int y = 0; y < h; y++) {
+            int sOff = (srcY + y) * srcRowPitch + srcX * 4;
+            for (int x = 0; x < w; x++) {
+                int si = sOff + x * 4;
+                dst.put(src.get(si)).put(src.get(si + 1)).put(src.get(si + 2)).put(src.get(si + 3));
+            }
+        }
+    }
+
+    public static void copyNormalPatch(ByteBuffer dst,
+                                       byte[] normalTable, int tableW, int tableH,
+                                       int srcX, int srcY,
+                                       int w, int h) {
+        for (int y = 0; y < h; y++) {
+            int row = wrapNonNegative(srcY + y, tableH) * tableW;
+            for (int x = 0; x < w; x++) {
+                int idx = (row + wrapNonNegative(srcX + x, tableW)) * 4;
+                dst.put(normalTable[idx])
+                   .put(normalTable[idx + 1])
+                   .put(normalTable[idx + 2])
+                   .put(normalTable[idx + 3]);
+            }
+        }
+    }
+
+    public static void fillFlatNormalPatch(ByteBuffer dst, int w, int h) {
+        int count = w * h;
+        for (int i = 0; i < count; i++) {
+            dst.put((byte) 128).put((byte) 128).put((byte) 255).put((byte) 255);
+        }
+    }
+
+    public static void copyR8Patch(ByteBuffer dst,
+                                   byte[] r8Table, int tableW, int tableH,
+                                   int srcX, int srcY,
+                                   int w, int h) {
+        for (int y = 0; y < h; y++) {
+            int row = wrapNonNegative(srcY + y, tableH) * tableW;
+            for (int x = 0; x < w; x++) {
+                int idx = row + wrapNonNegative(srcX + x, tableW);
+                dst.put(r8Table[idx]);
+            }
+        }
+    }
+
+    public static void fillR8Patch(ByteBuffer dst, byte val, int w, int h) {
+        int count = w * h;
+        for (int i = 0; i < count; i++) {
+            dst.put(val);
+        }
+    }
+
+    public static void buildEmissivePatch(ByteBuffer dst,
+                                         ByteBuffer srcAlbedo, int srcRowPitch,
+                                         byte[] sAlphaTable, int sW, int sH,
+                                         int srcX, int srcY,
+                                         int w, int h) {
+        for (int y = 0; y < h; y++) {
+            int sOff = (srcY + y) * srcRowPitch + srcX * 4;
+            int saRow = wrapNonNegative(srcY + y, sH) * sW;
+            for (int x = 0; x < w; x++) {
+                int alpha = sAlphaTable[saRow + wrapNonNegative(srcX + x, sW)] & 0xFF;
+                float factor = (alpha < 255) ? (alpha / 254.0f) : 0.0f;
+                int si = sOff + x * 4;
+                int r = clamp255((int) ((srcAlbedo.get(si)     & 0xFF) * factor));
+                int g = clamp255((int) ((srcAlbedo.get(si + 1) & 0xFF) * factor));
+                int b = clamp255((int) ((srcAlbedo.get(si + 2) & 0xFF) * factor));
+                byte a = (byte) (factor > 0 ? 255 : 0);
+                dst.put((byte) r).put((byte) g).put((byte) b).put(a);
+            }
+        }
+    }
+
+    public static void fillZeroRGBA8(ByteBuffer dst, int w, int h) {
+        int count = w * h * 4;
+        for (int i = 0; i < count; i++) {
+            dst.put((byte) 0);
+        }
+    }
+
     public static void applyAOToPatch(byte[] dst, int dstRowPitch,
                                      ByteBuffer src, int srcRowPitch,
                                      byte[] aoTable, int aoW, int aoH,
@@ -191,6 +339,38 @@ public final class LabPBRConverter {
                 dst[dOff + i] = src.get(sOff + i);
             }
         }
+    }
+
+    public static byte[] buildNormalTable(NativeImage n) {
+        int w = n.getWidth(), h = n.getHeight();
+        byte[] table = new byte[w * h * 4];
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int abgr = n.getPixelRGBA(x, y);
+                int nr = abgr & 0xFF;
+                int ng = (abgr >> 8) & 0xFF;
+                double nx = (nr / 255.0) * 2.0 - 1.0;
+                double ny = (ng / 255.0) * 2.0 - 1.0;
+                double nz = Math.sqrt(Math.max(0.0, 1.0 - nx * nx - ny * ny));
+                int idx = (y * w + x) * 4;
+                table[idx]     = (byte) nr;
+                table[idx + 1] = (byte) ng;
+                table[idx + 2] = (byte) clamp255((int) (nz * 255.0));
+                table[idx + 3] = (byte) 255;
+            }
+        }
+        return table;
+    }
+
+    public static byte[] buildHeightTable(NativeImage n) {
+        int w = n.getWidth(), h = n.getHeight();
+        byte[] table = new byte[w * h];
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                table[y * w + x] = (byte) ((n.getPixelRGBA(x, y) >> 24) & 0xFF);
+            }
+        }
+        return table;
     }
 
     public static byte[] buildAOTable(NativeImage n) {
