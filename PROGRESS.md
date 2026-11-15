@@ -171,3 +171,17 @@ Para certificar de forma definitiva los puntos marcados como **NO VERIFICADO**, 
 5. **Verificación de Pacing de Chunks y Rendimiento Sostenido:**
    * En modo creativo, volar en línea recta a 16 chunks de renderizado durante 2 minutos.
    * *Criterio de Aprobación:* La tasa de cuadros se mantiene estable (80–110 FPS con DLSS Balanced) sin caídas abruptas a <20 FPS al cruzar límites de sección de chunks.
+
+
+---
+
+## 10. Seguimiento de Hotfixes Visuales de Campo (Sprint de Estabilización)
+
+Defectos críticos detectados en prueba de campo y asignados para hotfix inmediato:
+
+| # | Defecto / Síntoma | Agente Responsable | Causa Raíz Preliminar | Archivos Involucrados | Estado QA / Regresión |
+| :-: | :--- | :---: | :--- | :--- | :---: |
+| **1** | **Chunks negros / secciones negras** | **Agente A** | Fallo en transferencia de normales/tangentes, índice de luz o asignación de material opaco sin albedo en `DirectQuadWriter` / `SectionMeshData`. | `BlockQuadEmitter.java`, `DirectQuadWriter.java`, `ChunkManager.java` | *En diagnóstico activo* |
+| **2** | **Entidad / personaje transparente** | **Agente B** | Clasificación errónea de capa en `layerFromRenderType` o factor de blend translúcido / alpha testing en pieles de jugador. | `RemixEntitySubmitter.java`, `RenderLayerUtils.java` | *En diagnóstico activo* |
+| **3** | **Book of Dragons invisible** | **Agente C** | Descarte de capa de render FaunaEngine en pipeline de entidad o fallo en resolución de textura de especie genética en runtime. | `RenderLayerUtils.java`, `RemixVertexConsumerProvider.java` | *En diagnóstico activo* |
+| **4** | **Lava opaca sin brillo ni emisión** | **Agente D** | Material de lava clasificado como terreno estándar opaco sin bandera emissiva en material ni registro en `BlockLightDefaults` / `BuiltinEmission`. | `BlockLightDefaults.java`, `BlockQuadEmitter.java`, `ForgeRemixRenderer.java` | *En diagnóstico activo* |
