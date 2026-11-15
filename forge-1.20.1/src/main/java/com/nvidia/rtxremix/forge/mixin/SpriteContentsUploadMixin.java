@@ -7,6 +7,8 @@ package com.nvidia.rtxremix.forge.mixin;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder;
 import net.minecraft.client.renderer.texture.SpriteContents;
+import net.minecraft.resources.ResourceLocation;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -16,6 +18,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(SpriteContents.class)
 public abstract class SpriteContentsUploadMixin {
 
+    @Shadow @Final private ResourceLocation name;
     @Shadow public abstract int width();
     @Shadow public abstract int height();
 
@@ -34,7 +37,7 @@ public abstract class SpriteContentsUploadMixin {
         int frameHeight = this.height();
         int rowPitch = imgWidth * 4;
 
-        AtlasAnimationForwarder.addPatch(texX, texY, srcX, srcY, frameWidth, frameHeight,
+        AtlasAnimationForwarder.addPatch(name, texX, texY, srcX, srcY, frameWidth, frameHeight,
                 imgWidth, imgHeight, basePtr, rowPitch);
     }
 }

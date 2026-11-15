@@ -41,6 +41,11 @@ public final class ForgeRemixRenderer {
     private com.nvidia.rtxremix.forge.entity.RemixBlockEntityPass blockEntityPass;
     private com.nvidia.rtxremix.forge.particle.RemixParticleRenderer particleRenderer;
     private long terrainAtlasTexture = 0;
+    private long terrainNormalTexture = 0;
+    private long terrainHeightTexture = 0;
+    private long terrainRoughnessTexture = 0;
+    private long terrainMetallicTexture = 0;
+    private long terrainEmissiveTexture = 0;
     private long defaultTerrainMaterial = 0;
     private long solidTerrainMaterial = 0;
     private long cutoutTerrainMaterial = 0;
@@ -335,6 +340,11 @@ public final class ForgeRemixRenderer {
                 java.nio.ByteBuffer buffer = org.lwjgl.system.MemoryUtil.memAlloc(width * height * 4);
                 try {
                     byte[] stitched = stitchAtlasRGBA(atlas, width, height);
+
+                    // Build parallel LabPBR atlas textures (_n, _s, _sss)
+                    com.nvidia.rtxremix.forge.texture.BlockTextureManager.PbrAtlasResult pbr =
+                            com.nvidia.rtxremix.forge.texture.BlockTextureManager.get().buildPbrAtlas(atlas, width, height, stitched);
+
                     buffer.put(stitched);
                     buffer.flip();
                     long texHash = 0x424C_4F43_4B53_0001L;
@@ -348,55 +358,217 @@ public final class ForgeRemixRenderer {
                     LOGGER.info("Stitched and uploaded Minecraft terrain atlas texture ({}x{}) to RTX Remix: handle=0x{}",
                             width, height, Long.toHexString(terrainAtlasTexture));
 
-                    // 1. Solid terrain material (opaque block atlas)
-                    MaterialInfoOpaqueEXT solidOpaque = MaterialInfoOpaqueEXT.builder()
+                    // Upload auxiliary PBR maps if present in resource pack
+                    if (pbr.hasNormal()) {
+                        java.nio.ByteBuffer nBuf = org.lwjgl.system.MemoryUtil.memAlloc(width * height * 4);
+                        try {
+                            nBuf.put(pbr.normalAtlas()).flip();
+                            TextureFromMemoryInfo nInfo = TextureFromMemoryInfo.builder()
+                                    .hash(0x4E4F_524D_414C_0001L) // "NORMAL_1"
+                                    .size(width, height)
+                                    .format(TextureFormat.RGBA8_UNORM)
+                                    .purpose(com.nvidia.rtxremix.TexturePurpose.NORMAL_DX)
+                                    .pixelData(nBuf)
+                                    .build();
+                            terrainNormalTexture = api.createTextureFromMemory(nInfo);
+                            LOGGER.info("Uploaded terrain normal atlas: handle=0x{}", Long.toHexString(terrainNormalTexture));
+                        } finally {
+                            org.lwjgl.system.MemoryUtil.memFree(nBuf);
+                        }
+                    }
+
+                    if (pbr.hasHeight()) {
+                        java.nio.ByteBuffer hBuf = org.lwjgl.system.MemoryUtil.memAlloc(width * height);
+                        try {
+                            hBuf.put(pbr.heightAtlas()).flip();
+                            TextureFromMemoryInfo hInfo = TextureFromMemoryInfo.builder()
+                                    .hash(0x4845_4947_4854_0001L) // "HEIGHT_1"
+                                    .size(width, height)
+                                    .format(TextureFormat.R8_UNORM)
+                                    .purpose(com.nvidia.rtxremix.TexturePurpose.HEIGHTMAP)
+                                    .pixelData(hBuf)
+                                    .build();
+                            terrainHeightTexture = api.createTextureFromMemory(hInfo);
+                            LOGGER.info("Uploaded terrain height atlas: handle=0x{}", Long.toHexString(terrainHeightTexture));
+                        } finally {
+                            org.lwjgl.system.MemoryUtil.memFree(hBuf);
+                        }
+                    }
+
+                    if (pbr.hasRoughness()) {
+                        java.nio.ByteBuffer rBuf = org.lwjgl.system.MemoryUtil.memAlloc(width * height);
+                        try {
+                            rBuf.put(pbr.roughnessAtlas()).flip();
+                            TextureFromMemoryInfo rInfo = TextureFromMemoryInfo.builder()
+                                    .hash(0x524F_5547_4800_0001L) // "ROUGH_1"
+                                    .size(width, height)
+                                    .format(TextureFormat.R8_UNORM)
+                                    .purpose(com.nvidia.rtxremix.TexturePurpose.DATA)
+                                    .pixelData(rBuf)
+                                    .build();
+                            terrainRoughnessTexture = api.createTextureFromMemory(rInfo);
+                            LOGGER.info("Uploaded terrain roughness atlas: handle=0x{}", Long.toHexString(terrainRoughnessTexture));
+                        } finally {
+                            org.lwjgl.system.MemoryUtil.memFree(rBuf);
+                        }
+                    }
+
+                    if (pbr.hasMetallic()) {
+                        java.nio.ByteBuffer mBuf = org.lwjgl.system.MemoryUtil.memAlloc(width * height);
+                        try {
+                            mBuf.put(pbr.metallicAtlas()).flip();
+                            TextureFromMemoryInfo mInfo = TextureFromMemoryInfo.builder()
+                                    .hash(0x4D45_5441_4C00_0001L) // "METAL_1"
+                                    .size(width, height)
+                                    .format(TextureFormat.R8_UNORM)
+                                    .purpose(com.nvidia.rtxremix.TexturePurpose.DATA)
+                                    .pixelData(mBuf)
+                                    .build();
+                            terrainMetallicTexture = api.createTextureFromMemory(mInfo);
+                            LOGGER.info("Uploaded terrain metallic atlas: handle=0x{}", Long.toHexString(terrainMetallicTexture));
+                        } finally {
+                            org.lwjgl.system.MemoryUtil.memFree(mBuf);
+                        }
+                    }
+
+                    if (pbr.hasEmissive()) {
+                        java.nio.ByteBuffer eBuf = org.lwjgl.system.MemoryUtil.memAlloc(width * height * 4);
+                        try {
+                            eBuf.put(pbr.emissiveAtlas()).flip();
+                            TextureFromMemoryInfo eInfo = TextureFromMemoryInfo.builder()
+                                    .hash(0x454D_4953_5300_0001L) // "EMISS_1"
+                                    .size(width, height)
+                                    .format(TextureFormat.RGBA8_UNORM)
+                                    .purpose(com.nvidia.rtxremix.TexturePurpose.COLOR)
+                                    .pixelData(eBuf)
+                                    .build();
+                            terrainEmissiveTexture = api.createTextureFromMemory(eInfo);
+                            LOGGER.info("Uploaded terrain emissive atlas: handle=0x{}", Long.toHexString(terrainEmissiveTexture));
+                        } finally {
+                            org.lwjgl.system.MemoryUtil.memFree(eBuf);
+                        }
+                    }
+
+                    // Register auxiliary sidecar PBR atlases for synchronized animation updates
+                    com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.clearSidecarAtlases();
+                    if (terrainNormalTexture != 0) com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.registerSidecarAtlas(terrainNormalTexture);
+                    if (terrainRoughnessTexture != 0) com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.registerSidecarAtlas(terrainRoughnessTexture);
+                    if (terrainMetallicTexture != 0) com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.registerSidecarAtlas(terrainMetallicTexture);
+                    if (terrainEmissiveTexture != 0) com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.registerSidecarAtlas(terrainEmissiveTexture);
+
+                    // 1. Solid terrain material (opaque block atlas with PBR binding)
+                    MaterialInfoOpaqueEXT.Builder solidOpaque = MaterialInfoOpaqueEXT.builder()
                             .albedoConstant(1.0f, 1.0f, 1.0f)
-                            .roughnessConstant(0.8f)
-                            .metallicConstant(0.0f)
-                            .useDrawCallAlphaState(true)
-                            .build();
-                    MaterialInfo solidInfo = MaterialInfo.builder()
+                            .useDrawCallAlphaState(true);
+
+                    if (terrainRoughnessTexture != 0) {
+                        solidOpaque.roughnessTexture(terrainRoughnessTexture).roughnessConstant(1.0f);
+                    } else {
+                        // Anti-mirroring safeguard: dielectric matte default
+                        solidOpaque.roughnessConstant(0.80f);
+                    }
+
+                    if (terrainMetallicTexture != 0) {
+                        solidOpaque.metallicTexture(terrainMetallicTexture).metallicConstant(1.0f);
+                    } else {
+                        solidOpaque.metallicConstant(0.0f);
+                    }
+
+                    if (terrainHeightTexture != 0) {
+                        solidOpaque.heightTexture(terrainHeightTexture).displaceIn(0.25f);
+                    }
+
+                    MaterialInfo.Builder solidInfo = MaterialInfo.builder()
                             .hash(0x4D41_545F_534F_4C49L) // "MAT_SOLI"
                             .albedoTexture(terrainAtlasTexture)
                             .filterMode(0)
-                            .opaqueExt(solidOpaque)
-                            .build();
-                    solidTerrainMaterial = api.createMaterial(solidInfo);
+                            .opaqueExt(solidOpaque.build());
+
+                    if (terrainNormalTexture != 0) {
+                        solidInfo.normalTexture(terrainNormalTexture);
+                    }
+                    if (terrainEmissiveTexture != 0) {
+                        solidInfo.emissiveTexture(terrainEmissiveTexture).emissiveIntensity(100.0f);
+                    }
+
+                    solidTerrainMaterial = api.createMaterial(solidInfo.build());
                     defaultTerrainMaterial = solidTerrainMaterial;
 
                     // 2. Cutout terrain material (foliage, torches, tall grass, flowers)
-                    MaterialInfoOpaqueEXT cutoutOpaque = MaterialInfoOpaqueEXT.builder()
+                    MaterialInfoOpaqueEXT.Builder cutoutOpaque = MaterialInfoOpaqueEXT.builder()
                             .albedoConstant(1.0f, 1.0f, 1.0f)
-                            .roughnessConstant(0.8f)
-                            .metallicConstant(0.0f)
                             .alphaTestType(4) // GREATER
                             .alphaReferenceValue(128)
-                            .useDrawCallAlphaState(true)
-                            .build();
-                    MaterialInfo cutoutInfo = MaterialInfo.builder()
+                            .useDrawCallAlphaState(true);
+
+                    if (terrainRoughnessTexture != 0) {
+                        cutoutOpaque.roughnessTexture(terrainRoughnessTexture).roughnessConstant(1.0f);
+                    } else {
+                        cutoutOpaque.roughnessConstant(0.80f);
+                    }
+
+                    if (terrainMetallicTexture != 0) {
+                        cutoutOpaque.metallicTexture(terrainMetallicTexture).metallicConstant(1.0f);
+                    } else {
+                        cutoutOpaque.metallicConstant(0.0f);
+                    }
+
+                    if (terrainHeightTexture != 0) {
+                        cutoutOpaque.heightTexture(terrainHeightTexture).displaceIn(0.25f);
+                    }
+
+                    MaterialInfo.Builder cutoutInfo = MaterialInfo.builder()
                             .hash(0x4D41_545F_4355_544FL) // "MAT_CUTO"
                             .albedoTexture(terrainAtlasTexture)
                             .filterMode(0)
-                            .opaqueExt(cutoutOpaque)
-                            .build();
-                    cutoutTerrainMaterial = api.createMaterial(cutoutInfo);
+                            .opaqueExt(cutoutOpaque.build());
+
+                    if (terrainNormalTexture != 0) {
+                        cutoutInfo.normalTexture(terrainNormalTexture);
+                    }
+                    if (terrainEmissiveTexture != 0) {
+                        cutoutInfo.emissiveTexture(terrainEmissiveTexture).emissiveIntensity(100.0f);
+                    }
+
+                    cutoutTerrainMaterial = api.createMaterial(cutoutInfo.build());
 
                     // 2b. Cutout mipped terrain material (leaves, mipmapped foliage)
-                    MaterialInfoOpaqueEXT cutoutMippedOpaque = MaterialInfoOpaqueEXT.builder()
+                    MaterialInfoOpaqueEXT.Builder cutoutMippedOpaque = MaterialInfoOpaqueEXT.builder()
                             .albedoConstant(1.0f, 1.0f, 1.0f)
-                            .roughnessConstant(0.8f)
-                            .metallicConstant(0.0f)
                             .alphaTestType(4) // GREATER
                             .alphaReferenceValue(128)
-                            .useDrawCallAlphaState(true)
-                            .build();
-                    MaterialInfo cutoutMippedInfo = MaterialInfo.builder()
+                            .useDrawCallAlphaState(true);
+
+                    if (terrainRoughnessTexture != 0) {
+                        cutoutMippedOpaque.roughnessTexture(terrainRoughnessTexture).roughnessConstant(1.0f);
+                    } else {
+                        cutoutMippedOpaque.roughnessConstant(0.80f);
+                    }
+
+                    if (terrainMetallicTexture != 0) {
+                        cutoutMippedOpaque.metallicTexture(terrainMetallicTexture).metallicConstant(1.0f);
+                    } else {
+                        cutoutMippedOpaque.metallicConstant(0.0f);
+                    }
+
+                    if (terrainHeightTexture != 0) {
+                        cutoutMippedOpaque.heightTexture(terrainHeightTexture).displaceIn(0.25f);
+                    }
+
+                    MaterialInfo.Builder cutoutMippedInfo = MaterialInfo.builder()
                             .hash(0x4D41_545F_4355_544DL) // "MAT_CUTM"
                             .albedoTexture(terrainAtlasTexture)
                             .filterMode(1) // Mipmapped / bilinear
-                            .opaqueExt(cutoutMippedOpaque)
-                            .build();
-                    cutoutMippedTerrainMaterial = api.createMaterial(cutoutMippedInfo);
+                            .opaqueExt(cutoutMippedOpaque.build());
+
+                    if (terrainNormalTexture != 0) {
+                        cutoutMippedInfo.normalTexture(terrainNormalTexture);
+                    }
+                    if (terrainEmissiveTexture != 0) {
+                        cutoutMippedInfo.emissiveTexture(terrainEmissiveTexture).emissiveIntensity(100.0f);
+                    }
+
+                    cutoutMippedTerrainMaterial = api.createMaterial(cutoutMippedInfo.build());
 
                     // Pre-allocate native blend extension pointers for terrain categories (zero hot-path allocation)
                     if (solidBlendPNext == 0) {
@@ -1223,6 +1395,27 @@ public final class ForgeRemixRenderer {
             try { api.destroyTexture(terrainAtlasTexture); } catch (Exception ignored) {}
             terrainAtlasTexture = 0;
         }
+        if (terrainNormalTexture != 0 && api != null) {
+            try { api.destroyTexture(terrainNormalTexture); } catch (Exception ignored) {}
+            terrainNormalTexture = 0;
+        }
+        if (terrainHeightTexture != 0 && api != null) {
+            try { api.destroyTexture(terrainHeightTexture); } catch (Exception ignored) {}
+            terrainHeightTexture = 0;
+        }
+        if (terrainRoughnessTexture != 0 && api != null) {
+            try { api.destroyTexture(terrainRoughnessTexture); } catch (Exception ignored) {}
+            terrainRoughnessTexture = 0;
+        }
+        if (terrainMetallicTexture != 0 && api != null) {
+            try { api.destroyTexture(terrainMetallicTexture); } catch (Exception ignored) {}
+            terrainMetallicTexture = 0;
+        }
+        if (terrainEmissiveTexture != 0 && api != null) {
+            try { api.destroyTexture(terrainEmissiveTexture); } catch (Exception ignored) {}
+            terrainEmissiveTexture = 0;
+        }
+        com.nvidia.rtxremix.forge.texture.AtlasAnimationForwarder.clearSidecarAtlases();
         defaultTerrainMaterial = 0;
         if (interop != null) {
             try {

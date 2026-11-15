@@ -9,7 +9,10 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.resources.ResourceLocation;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -17,6 +20,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * Manages per-sprite textures, material categories, and PBR mappings for RTX Remix terrain on Forge 1.20.1.
  */
 public class BlockTextureManager {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(BlockTextureManager.class);
 
     public static final int L_SOLID = 0;
     public static final int L_CUTOUT = 1;
@@ -33,6 +38,19 @@ public class BlockTextureManager {
             return hasTransparency;
         }
     }
+
+    public record PbrAtlasResult(
+            byte[] normalAtlas,
+            byte[] heightAtlas,
+            byte[] roughnessAtlas,
+            byte[] metallicAtlas,
+            byte[] emissiveAtlas,
+            boolean hasNormal,
+            boolean hasHeight,
+            boolean hasRoughness,
+            boolean hasMetallic,
+            boolean hasEmissive
+    ) {}
 
     private static BlockTextureManager INSTANCE = new BlockTextureManager();
     private final Map<ResourceLocation, SpriteEntry> spriteById = new ConcurrentHashMap<>();
@@ -132,5 +150,102 @@ public class BlockTextureManager {
 
     public Object getAtlasMaterialSSS(int layerType) {
         return null;
+    }
+
+    /**
+     * Builds parallel LabPBR atlas byte buffers (_n, _s, _sss) from resource pack sidecars.
+     */
+    public PbrAtlasResult buildPbrAtlas(TextureAtlas atlas, int atlasW, int atlasH, byte[] albedoRGBA) {
+        int totalPixels = atlasW * atlasH;
+        byte[] normalAtlas = new byte[totalPixels * 4];
+        byte[] heightAtlas = new byte[totalPixels];
+        byte[] roughnessAtlas = new byte[totalPixels];
+        byte[] metallicAtlas = new byte[totalPixels];
+        byte[] emissiveAtlas = new byte[totalPixels * 4];
+
+        // Initialize flat normal: (128, 128, 255, 255)
+        for (int i = 0; i < totalPixels; i++) {
+            int idx4 = i * 4;
+            normalAtlas[idx4]     = (byte) 128;
+            normalAtlas[idx4 + 1] = (byte) 128;
+            normalAtlas[idx4 + 2] = (byte) 255;
+            normalAtlas[idx4 + 3] = (byte) 255;
+        }
+
+        // Initialize height to 255 (top of parallax surface)
+        Arrays.fill(heightAtlas, (byte) 255);
+
+        // Anti-mirroring safeguard: initialize default roughness to 204 (~0.80 roughness)
+        // so ordinary non-PBR surfaces stay matte dielectric.
+        Arrays.fill(roughnessAtlas, (byte) 204);
+
+        // Initialize metallic to 0 (dielectric)
+        Arrays.fill(metallicAtlas, (byte) 0);
+
+        boolean hasNormal = false;
+        boolean hasHeight = false;
+        boolean hasRoughness = false;
+        boolean hasMetallic = false;
+        boolean hasEmissive = false;
+        int pbrSpriteCount = 0;
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc != null && mc.getResourceManager() != null && atlas != null) {
+            LabPBRConverter.VariantCache cache = LabPBRConverter.buildVariantCache(mc.getResourceManager());
+            for (ResourceLocation loc : atlas.getTextureLocations()) {
+                TextureAtlasSprite sprite = atlas.getSprite(loc);
+                if (sprite == null || sprite.contents() == null) continue;
+
+                int ox = sprite.getX();
+                int oy = sprite.getY();
+                int w = sprite.contents().width();
+                int h = sprite.contents().height();
+
+                NativeImage nImg = cache.loadVariant(loc, "_n");
+                NativeImage sImg = cache.loadVariant(loc, "_s");
+                NativeImage sssImg = cache.loadVariant(loc, "_sss");
+
+                boolean spriteHasPbr = false;
+                try {
+                    if (nImg != null) {
+                        LabPBRConverter.blitNormal(normalAtlas, atlasW, nImg, ox, oy, w, h);
+                        LabPBRConverter.blitHeight(heightAtlas, atlasW, nImg, ox, oy, w, h);
+                        if (albedoRGBA != null) {
+                            LabPBRConverter.applyAO(albedoRGBA, atlasW, nImg, ox, oy, w, h);
+                        }
+                        hasNormal = true;
+                        hasHeight = true;
+                        spriteHasPbr = true;
+                    }
+
+                    if (sImg != null) {
+                        LabPBRConverter.blitRoughness(roughnessAtlas, atlasW, sImg, ox, oy, w, h);
+                        LabPBRConverter.blitMetallic(metallicAtlas, atlasW, sImg, ox, oy, w, h);
+                        hasRoughness = true;
+                        hasMetallic = true;
+                        spriteHasPbr = true;
+
+                        if (LabPBRConverter.hasEmissiveData(sImg) && albedoRGBA != null) {
+                            LabPBRConverter.blitEmissive(emissiveAtlas, atlasW, albedoRGBA, sImg, ox, oy, w, h, 0.0f, 1.0f);
+                            hasEmissive = true;
+                        }
+                    }
+                } finally {
+                    if (nImg != null) nImg.close();
+                    if (sImg != null) sImg.close();
+                    if (sssImg != null) sssImg.close();
+                }
+
+                if (spriteHasPbr) {
+                    pbrSpriteCount++;
+                }
+            }
+        }
+
+        LOGGER.info("Built LabPBR terrain atlas ({} sprites with PBR sidecars, normal={}, height={}, roughness={}, metallic={}, emissive={})",
+                pbrSpriteCount, hasNormal, hasHeight, hasRoughness, hasMetallic, hasEmissive);
+
+        return new PbrAtlasResult(normalAtlas, heightAtlas, roughnessAtlas, metallicAtlas, emissiveAtlas,
+                hasNormal, hasHeight, hasRoughness, hasMetallic, hasEmissive);
     }
 }

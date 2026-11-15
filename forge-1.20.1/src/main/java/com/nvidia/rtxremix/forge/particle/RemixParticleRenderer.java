@@ -152,6 +152,8 @@ public final class RemixParticleRenderer {
                         MaterialInfo matInfo = MaterialInfo.builder()
                                 .hash(0x4D41_545F_5041_5254L) // "MAT_PART"
                                 .albedoTexture(particleAtlasTexture)
+                                .emissiveTexture(particleAtlasTexture)
+                                .emissiveIntensity(10.0f)
                                 .filterMode(0) // NEAREST
                                 .opaqueExt(opaqueExt)
                                 .build();

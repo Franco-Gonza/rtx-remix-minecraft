@@ -193,5 +193,29 @@ public class BlockTextureAuditTest {
             assertTrue(stepX != 0 || stepY != 0 || stepZ != 0, "Direction step vector must not be zero");
         }
     }
+
+    @Test
+    void testFireAndSoulFireLightRules() {
+        assertTrue(com.nvidia.rtxremix.forge.light.BlockLightRuleManager.hasMatchingRules(net.minecraft.world.level.block.Blocks.FIRE.defaultBlockState()));
+        assertTrue(com.nvidia.rtxremix.forge.light.BlockLightRuleManager.hasMatchingRules(net.minecraft.world.level.block.Blocks.SOUL_FIRE.defaultBlockState()));
+
+        var fireRules = com.nvidia.rtxremix.forge.light.BlockLightRuleManager.resolve(
+                net.minecraft.world.level.block.Blocks.FIRE.defaultBlockState(),
+                net.minecraft.core.BlockPos.ZERO,
+                null);
+        assertEquals(1, fireRules.size());
+        var fireLight = fireRules.get(0);
+        assertTrue(fireLight.intensity() > 0.0f);
+        assertTrue(fireLight.colorR() > fireLight.colorB(), "Fire should be warm colored");
+
+        var soulRules = com.nvidia.rtxremix.forge.light.BlockLightRuleManager.resolve(
+                net.minecraft.world.level.block.Blocks.SOUL_FIRE.defaultBlockState(),
+                net.minecraft.core.BlockPos.ZERO,
+                null);
+        assertEquals(1, soulRules.size());
+        var soulLight = soulRules.get(0);
+        assertTrue(soulLight.intensity() > 0.0f);
+        assertTrue(soulLight.colorB() > soulLight.colorR(), "Soul fire should be cool cyan/blue colored");
+    }
 }
 

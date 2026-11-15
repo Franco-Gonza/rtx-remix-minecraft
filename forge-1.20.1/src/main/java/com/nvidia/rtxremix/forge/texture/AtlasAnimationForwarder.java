@@ -39,14 +39,31 @@ public final class AtlasAnimationForwarder {
     private static final TextureBatchEntry blockBatchEntry = new TextureBatchEntry();
     private static final TextureBatchEntry particleBatchEntry = new TextureBatchEntry();
     private static final TexturePatchInfo sharedPatchInfo = new TexturePatchInfo();
+    private static final List<Long> sidecarPbrAtlases = new ArrayList<>(4);
 
     public record PendingPatch(
+            ResourceLocation spriteId,
             int dstX, int dstY,
             int srcX, int srcY,
             int width, int height,
             int srcImageWidth, int srcImageHeight,
             long pixelPtr, int rowPitch
-    ) {}
+    ) {
+        public PendingPatch(int dstX, int dstY, int srcX, int srcY, int width, int height,
+                            int srcImageWidth, int srcImageHeight, long pixelPtr, int rowPitch) {
+            this(null, dstX, dstY, srcX, srcY, width, height, srcImageWidth, srcImageHeight, pixelPtr, rowPitch);
+        }
+    }
+
+    public static void registerSidecarAtlas(long handle) {
+        if (handle != 0 && !sidecarPbrAtlases.contains(handle)) {
+            sidecarPbrAtlases.add(handle);
+        }
+    }
+
+    public static void clearSidecarAtlases() {
+        sidecarPbrAtlases.clear();
+    }
 
     public static void setActive(boolean isRunning) {
         active = isRunning;
@@ -83,11 +100,19 @@ public final class AtlasAnimationForwarder {
                                 int width, int height,
                                 int imgWidth, int imgHeight,
                                 long pixelPtr, int rowPitch) {
+        addPatch(null, texX, texY, srcX, srcY, width, height, imgWidth, imgHeight, pixelPtr, rowPitch);
+    }
+
+    public static void addPatch(ResourceLocation spriteId,
+                                int texX, int texY, int srcX, int srcY,
+                                int width, int height,
+                                int imgWidth, int imgHeight,
+                                long pixelPtr, int rowPitch) {
         if (!active || pixelPtr == 0 || width <= 0 || height <= 0) return;
         ResourceLocation atlas = currentAtlas.get();
         if (atlas == null) return;
 
-        PendingPatch patch = new PendingPatch(texX, texY, srcX, srcY, width, height, imgWidth, imgHeight, pixelPtr, rowPitch);
+        PendingPatch patch = new PendingPatch(spriteId, texX, texY, srcX, srcY, width, height, imgWidth, imgHeight, pixelPtr, rowPitch);
         if (TextureAtlas.LOCATION_BLOCKS.equals(atlas)) {
             if (pendingBlockPatches.size() >= MAX_PENDING_PATCHES) {
                 pendingBlockPatches.clear();
@@ -114,10 +139,26 @@ public final class AtlasAnimationForwarder {
         int entryCount = 0;
         TextureBatchEntry bEntry = null;
         TextureBatchEntry pEntry = null;
+        List<TextureBatchEntry> sidecarEntries = null;
 
         if (blockAtlasHandle != 0 && !pendingBlockPatches.isEmpty()) {
             bEntry = buildBatchEntry(blockAtlasHandle, pendingBlockPatches, blockPatchesBuffer, blockBatchEntry);
-            if (bEntry != null) entryCount++;
+            if (bEntry != null) {
+                entryCount++;
+                if (!sidecarPbrAtlases.isEmpty()) {
+                    sidecarEntries = new ArrayList<>(sidecarPbrAtlases.size());
+                    for (int i = 0; i < sidecarPbrAtlases.size(); i++) {
+                        long sHandle = sidecarPbrAtlases.get(i);
+                        if (sHandle != 0) {
+                            TextureBatchEntry sEntry = buildBatchEntry(sHandle, pendingBlockPatches, new ArrayList<>(pendingBlockPatches.size()), new TextureBatchEntry());
+                            if (sEntry != null) {
+                                sidecarEntries.add(sEntry);
+                                entryCount++;
+                            }
+                        }
+                    }
+                }
+            }
         }
         if (particleAtlasHandle != 0 && !pendingParticlePatches.isEmpty()) {
             pEntry = buildBatchEntry(particleAtlasHandle, pendingParticlePatches, particlePatchesBuffer, particleBatchEntry);
@@ -129,6 +170,11 @@ public final class AtlasAnimationForwarder {
                 TextureBatchEntry[] batchEntries = new TextureBatchEntry[entryCount];
                 int idx = 0;
                 if (bEntry != null) batchEntries[idx++] = bEntry;
+                if (sidecarEntries != null) {
+                    for (int i = 0; i < sidecarEntries.size(); i++) {
+                        batchEntries[idx++] = sidecarEntries.get(i);
+                    }
+                }
                 if (pEntry != null) batchEntries[idx] = pEntry;
 
                 sharedPatchInfo.entries = batchEntries;

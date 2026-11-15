@@ -40,7 +40,8 @@ public final class BlockLightRuleManager {
                 || state.is(Blocks.REDSTONE_TORCH) || state.is(Blocks.REDSTONE_WALL_TORCH)
                 || state.is(Blocks.CAMPFIRE) || state.is(Blocks.SOUL_CAMPFIRE)
                 || state.is(Blocks.LANTERN) || state.is(Blocks.SOUL_LANTERN)
-                || state.is(Blocks.END_ROD);
+                || state.is(Blocks.END_ROD)
+                || state.is(Blocks.FIRE) || state.is(Blocks.SOUL_FIRE);
     }
 
     public static List<LightEntry> resolve(BlockState state, BlockPos pos, ModelSampler sampler) {
@@ -135,6 +136,18 @@ public final class BlockLightRuleManager {
             radius = 0.08f;
             colorR = 0.95f; colorG = 0.95f; colorB = 1.0f;
             intensityScale = 1.0f;
+        } else if (state.is(Blocks.FIRE)) {
+            ruleName = "fire";
+            x = 0.5f; y = 0.35f; z = 0.5f;
+            radius = 0.25f;
+            colorR = 1.0f; colorG = 0.45f; colorB = 0.1f;
+            intensityScale = 2.0f;
+        } else if (state.is(Blocks.SOUL_FIRE)) {
+            ruleName = "soul_fire";
+            x = 0.5f; y = 0.35f; z = 0.5f;
+            radius = 0.25f;
+            colorR = 0.05f; colorG = 0.35f; colorB = 1.0f;
+            intensityScale = 2.0f;
         } else {
             return Collections.emptyList();
         }

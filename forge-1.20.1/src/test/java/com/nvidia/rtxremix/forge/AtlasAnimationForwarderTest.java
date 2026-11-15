@@ -158,4 +158,21 @@ public class AtlasAnimationForwarderTest {
         // Flushing without live API clears gracefully without error
         AtlasAnimationForwarder.flush(null, 1L);
     }
+
+    @Test
+    void testSidecarAtlasRegistrationAndClear() {
+        AtlasAnimationForwarder.clearSidecarAtlases();
+        AtlasAnimationForwarder.registerSidecarAtlas(0x2001L);
+        AtlasAnimationForwarder.registerSidecarAtlas(0x2002L);
+        // Duplicate should be ignored
+        AtlasAnimationForwarder.registerSidecarAtlas(0x2001L);
+
+        AtlasAnimationForwarder.beginAtlasUpload(TextureAtlas.LOCATION_BLOCKS);
+        AtlasAnimationForwarder.addPatch(new ResourceLocation("minecraft", "block/lava_still"),
+                0, 0, 0, 16, 16, 16, 16, 256, 0x1000L, 64);
+        AtlasAnimationForwarder.endAtlasUpload();
+
+        AtlasAnimationForwarder.clear();
+        AtlasAnimationForwarder.clearSidecarAtlases();
+    }
 }
