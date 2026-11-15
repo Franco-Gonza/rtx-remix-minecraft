@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.forge.mixin.compatibility;
 
+import com.nvidia.rtxremix.forge.compatibility.DragonWingMembraneHelper;
 import com.nvidia.rtxremix.forge.entity.EntityRenderContext;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
@@ -15,10 +16,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * Pseudo-mixin for FaunaEngine's FaunaRenderer (Book of Dragons, Liber Animalium).
- * When RTX Remix entity capture is active (EntityRenderContext.isActive()), forces
- * the renderer to bypass the compiled GPU model path (which draws via direct OpenGL shaders)
- * and route through SkeletonRenderer to emit software cubes and quads directly into
- * the capturing MultiBufferSource.
+ * When RTX Remix entity capture is active (EntityRenderContext.isActive()):
+ * 1. Forces the renderer to bypass the compiled GPU model path (which draws via direct OpenGL shaders)
+ *    and route through SkeletonRenderer to emit software cubes and quads directly into
+ *    the capturing MultiBufferSource.
+ * 2. Emits dragon wing membranes via DragonWingMembraneHelper upon return, ensuring full
+ *    dual-sided polygonal membranes are captured alongside the bone sticks.
  */
 @Pseudo
 @Mixin(targets = "net.magister.liberanimalium.render.FaunaRenderer", remap = false)
@@ -44,6 +47,20 @@ public abstract class FaunaRendererMixin {
             this.compiledActive = false;
             this.gpuActive = false;
             this.gpuDone = true;
+        }
+    }
+
+    @Inject(
+            method = "renderRecursively",
+            at = @At("RETURN"),
+            remap = false,
+            require = 0
+    )
+    private void rtxremix$renderMembranesForRemix(
+            @Coerce Object ctx, @Coerce Object bone, boolean z, CallbackInfo ci) {
+        EntityRenderContext rtxCtx = EntityRenderContext.get();
+        if (rtxCtx.isActive() && this.depth == 0) {
+            DragonWingMembraneHelper.renderMembranes(ctx);
         }
     }
 }
