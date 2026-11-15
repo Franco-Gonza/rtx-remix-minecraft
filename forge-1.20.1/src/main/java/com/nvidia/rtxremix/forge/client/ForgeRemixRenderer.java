@@ -738,7 +738,10 @@ public final class ForgeRemixRenderer {
                                 surf.material = matHandle;
                                 surf.flags = com.nvidia.rtxremix.MeshInfoSurfaceTriangles.TEXCOORD_BOUNDS; // Enable texture atlas bounds clamping
 
-                                long hash = java.util.concurrent.ThreadLocalRandom.current().nextLong() | 1L;
+                                long hash = (((long) pos.asLong()) << 16)
+                                        ^ ((long) surface.bucketKey().hashCode() * 31L + surface.category())
+                                        ^ ((long) surface.contentHash() & 0xFFFFFFFFL);
+                                if (hash == 0) hash = 1L;
                                 MeshInfo mi = MeshInfo.builder()
                                         .hash(hash)
                                         .surfaces(surf)

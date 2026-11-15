@@ -286,6 +286,8 @@ public final class DirectQuadWriter {
             String bk = layer;
             if (cat == SectionMeshData.CAT_SOLID && layerType != solidType) {
                 bk = "solid";
+            } else if (cat == SectionMeshData.CAT_CUTOUT && ("solid".equals(bk) || layerType == solidType)) {
+                bk = "cutout";
             }
             if (se != null && se.hasSSS() && tex != null && tex.getAtlasMaterialSSS(layerType) != null) {
                 bk = sssBucketKeyForOriginalLayer(layer, bk);

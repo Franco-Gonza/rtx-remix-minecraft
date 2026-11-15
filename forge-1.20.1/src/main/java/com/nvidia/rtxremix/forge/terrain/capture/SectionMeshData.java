@@ -35,6 +35,10 @@ public final class SectionMeshData {
         public String key() {
             return bucketKey;
         }
+
+        public int contentHash() {
+            return surfaceHash(this);
+        }
     }
 
     private final List<Surface> surfaces;

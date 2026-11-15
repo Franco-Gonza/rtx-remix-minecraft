@@ -289,16 +289,14 @@ public final class BlockQuadEmitter {
 
         ModelData modelData = ModelData.EMPTY;
         try {
-            java.lang.reflect.Method m = world.getClass().getMethod("getModelData", net.minecraft.core.BlockPos.class);
-            Object md = m.invoke(world, mutablePos);
-            if (md instanceof ModelData d) {
-                modelData = d;
-            }
+            modelData = model.getModelData(world, mutablePos, state, ModelData.EMPTY);
         } catch (Throwable ignored) {}
-        if (modelData == ModelData.EMPTY) {
+        if (modelData == null || modelData == ModelData.EMPTY) {
             net.minecraft.world.level.block.entity.BlockEntity be = world.getBlockEntity(mutablePos);
             if (be != null) {
-                modelData = be.getModelData();
+                try {
+                    modelData = be.getModelData();
+                } catch (Throwable ignored) {}
             }
         }
         if (modelData == null) {
@@ -381,16 +379,31 @@ public final class BlockQuadEmitter {
         }
 
         if (spriteId != null && "solid".equals(layerName)) {
-            String sp = spriteId.getPath().toLowerCase();
-            if (sp.contains("leaves") || sp.contains("foliage") || sp.contains("needle") || sp.contains("canopy")) {
-                layerName = "cutout_mipped";
-            } else if (sp.contains("bush") || sp.contains("shrub") || sp.contains("flower")
-                    || sp.contains("grass") || sp.contains("fern") || sp.contains("plant")
-                    || sp.contains("sapling") || sp.contains("roots") || sp.contains("sprouts")
-                    || sp.contains("vine") || sp.contains("petal") || sp.contains("branch")
-                    || sp.contains("twig") || sp.contains("flora") || sp.contains("cactus")
-                    || sp.contains("dead_bush") || sp.contains("deadbush")) {
+            BlockTextureManager.SpriteEntry entry = texManager != null ? texManager.getSpriteById(spriteId) : null;
+            if (entry != null && entry.hasTransparency()) {
                 layerName = "cutout";
+            } else {
+                String sp = spriteId.getPath().toLowerCase();
+                if (sp.contains("leaves") || sp.contains("foliage") || sp.contains("needle") || sp.contains("canopy")) {
+                    layerName = "cutout_mipped";
+                } else if (sp.contains("bush") || sp.contains("shrub") || sp.contains("flower")
+                        || sp.contains("grass") || sp.contains("fern") || sp.contains("plant")
+                        || sp.contains("sapling") || sp.contains("roots") || sp.contains("sprouts")
+                        || sp.contains("vine") || sp.contains("petal") || sp.contains("branch")
+                        || sp.contains("twig") || sp.contains("flora") || sp.contains("cactus")
+                        || sp.contains("dead_bush") || sp.contains("deadbush") || sp.contains("poppy")
+                        || sp.contains("dandelion") || sp.contains("tulip") || sp.contains("rose")
+                        || sp.contains("orchid") || sp.contains("daisy") || sp.contains("allium")
+                        || sp.contains("peony") || sp.contains("lily") || sp.contains("fungus")
+                        || sp.contains("mushroom") || sp.contains("torch") || sp.contains("lantern")
+                        || sp.contains("chain") || sp.contains("bars") || sp.contains("rail")
+                        || sp.contains("ladder") || sp.contains("reed") || sp.contains("cane")
+                        || sp.contains("bamboo") || sp.contains("kelp") || sp.contains("seagrass")
+                        || sp.contains("crop") || sp.contains("wheat") || sp.contains("carrot")
+                        || sp.contains("potato") || sp.contains("beetroot") || sp.contains("berry")
+                        || sp.contains("weed") || sp.contains("clover") || sp.contains("wildflower")) {
+                    layerName = "cutout";
+                }
             }
         }
         float su0 = sprite != null ? sprite.getU0() : 0;
@@ -888,7 +901,12 @@ public final class BlockQuadEmitter {
 
     private static String layerFromRenderType(RenderType rt, String fallback) {
         if (rt == null) return fallback;
-        if (RenderType.solid().equals(rt)) return "solid";
+        if (RenderType.solid().equals(rt)) {
+            if ("cutout".equals(fallback) || "cutout_mipped".equals(fallback) || "glass".equals(fallback) || "translucent".equals(fallback)) {
+                return fallback;
+            }
+            return "solid";
+        }
         if (RenderType.cutoutMipped().equals(rt)) return "cutout_mipped";
         if (RenderType.cutout().equals(rt)) return "cutout";
         if (RenderType.translucent().equals(rt)) return "translucent";
@@ -897,7 +915,12 @@ public final class BlockQuadEmitter {
         if (name.contains("cutout_mipped") || name.contains("cutoutmipped")) return "cutout_mipped";
         if (name.contains("cutout")) return "cutout";
         if (name.contains("translucent")) return "translucent";
-        if (name.contains("solid")) return "solid";
+        if (name.contains("solid")) {
+            if ("cutout".equals(fallback) || "cutout_mipped".equals(fallback) || "glass".equals(fallback) || "translucent".equals(fallback)) {
+                return fallback;
+            }
+            return "solid";
+        }
         return fallback;
     }
 
