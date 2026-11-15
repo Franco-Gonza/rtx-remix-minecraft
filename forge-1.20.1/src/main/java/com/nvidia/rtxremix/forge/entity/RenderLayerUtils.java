@@ -293,26 +293,17 @@ public final class RenderLayerUtils {
     public static SurfaceMode surfaceMode(RenderType layer) {
         if (layer == null) return SurfaceMode.CUTOUT;
 
-        // Check CompositeState transparencyState if available
-        if ((Object) layer instanceof CompositeRenderTypeAccessor multiPhase) {
-            try {
-                RenderType.CompositeState phases = multiPhase.rtxremix$getState();
-                if ((Object) phases instanceof CompositeStateAccessor stateAccessor) {
-                    RenderStateShard.TransparencyStateShard transparency = stateAccessor.rtxremix$getTransparencyState();
-                    if (transparency != null) {
-                        String transName = transparency.toString().toLowerCase();
-                        if (transName.contains("additive") || transName.contains("lightning")) {
-                            return SurfaceMode.EMISSIVE;
-                        }
-                        if (transName.contains("translucent")) {
-                            return SurfaceMode.TRANSLUCENT;
-                        }
-                    }
-                }
-            } catch (Throwable ignored) {}
+        String name = layer.toString().toLowerCase();
+
+        // Standard entity, player, armor, and item render types MUST be CUTOUT or OPAQUE.
+        // In vanilla Minecraft, player models, armors, and items use entityTranslucent to support
+        // cutout skin overlays (jackets/sleeves/hats). They are NOT physical translucent glass volumes.
+        if (name.contains("entity_solid") || name.contains("entity_cutout") || name.contains("armor_cutout")
+                || name.contains("entity_translucent") || name.contains("item_entity_translucent")
+                || name.contains("entity_smooth_cutout") || name.contains("player") || name.contains("skin")) {
+            return SurfaceMode.CUTOUT;
         }
 
-        String name = layer.toString().toLowerCase();
         if (name.contains("end_portal") || name.contains("end_gateway")) {
             return SurfaceMode.OPAQUE;
         }
@@ -323,7 +314,28 @@ public final class RenderLayerUtils {
         if (name.contains("text")) {
             return SurfaceMode.CUTOUT;
         }
-        if (name.contains("translucent") || name.contains("crumbling") || name.contains("water")
+        if (name.contains("glass") || name.contains("stained_glass")) {
+            return SurfaceMode.GLASS;
+        }
+
+        // Check CompositeState transparencyState for special modded translucent/emissive layers
+        if ((Object) layer instanceof CompositeRenderTypeAccessor multiPhase) {
+            try {
+                RenderType.CompositeState phases = multiPhase.rtxremix$getState();
+                if ((Object) phases instanceof CompositeStateAccessor stateAccessor) {
+                    RenderStateShard.TransparencyStateShard transparency = stateAccessor.rtxremix$getTransparencyState();
+                    if (transparency != null) {
+                        String transName = transparency.toString().toLowerCase();
+                        if (transName.contains("additive") || transName.contains("lightning")) {
+                            return SurfaceMode.EMISSIVE;
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {}
+        }
+
+        // Truly translucent modded layers (ghosts, rays, membranes, wings, fading effects)
+        if (name.contains("crumbling") || name.contains("water")
                 || name.contains("ghost") || name.contains("ghostly") || name.contains("tombstone")
                 || name.contains("ray") || name.contains("beam") || name.contains("membrane")
                 || name.contains("wing") || name.contains("hologram") || name.contains("halo")
@@ -331,9 +343,7 @@ public final class RenderLayerUtils {
                 || name.contains("fade")) {
             return SurfaceMode.TRANSLUCENT;
         }
-        if (name.contains("glass") || name.contains("stained_glass")) {
-            return SurfaceMode.GLASS;
-        }
+
         if (name.contains("solid") || name.contains("opaque")) {
             return SurfaceMode.OPAQUE;
         }

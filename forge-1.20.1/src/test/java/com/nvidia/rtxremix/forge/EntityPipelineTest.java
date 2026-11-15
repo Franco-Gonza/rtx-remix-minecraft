@@ -171,6 +171,28 @@ public class EntityPipelineTest {
     }
 
     @Test
+    void testStandardPlayerAndEntityLayersAreCutout() {
+        net.minecraft.resources.ResourceLocation dummyTex = new net.minecraft.resources.ResourceLocation("test", "tex");
+        DummyCustomRenderType playerSkin = new DummyCustomRenderType("minecraft:entity_translucent[minecraft:textures/entity/player/slim/steve.png]", dummyTex, com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS);
+        DummyCustomRenderType itemLayer = new DummyCustomRenderType("minecraft:item_entity_translucent_cull", dummyTex, com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS);
+        DummyCustomRenderType armorCutout = new DummyCustomRenderType("minecraft:armor_cutout_no_cull", dummyTex, com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS);
+        DummyCustomRenderType entitySolid = new DummyCustomRenderType("minecraft:entity_solid", dummyTex, com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS);
+        DummyCustomRenderType glassLayer = new DummyCustomRenderType("minecraft:entity_stained_glass", dummyTex, com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS);
+
+        assertEquals(com.nvidia.rtxremix.forge.entity.RenderLayerUtils.SurfaceMode.CUTOUT,
+                com.nvidia.rtxremix.forge.entity.RenderLayerUtils.surfaceMode(playerSkin),
+                "Player entity_translucent skin must classify as CUTOUT, not physical TRANSLUCENT glass");
+        assertEquals(com.nvidia.rtxremix.forge.entity.RenderLayerUtils.SurfaceMode.CUTOUT,
+                com.nvidia.rtxremix.forge.entity.RenderLayerUtils.surfaceMode(itemLayer));
+        assertEquals(com.nvidia.rtxremix.forge.entity.RenderLayerUtils.SurfaceMode.CUTOUT,
+                com.nvidia.rtxremix.forge.entity.RenderLayerUtils.surfaceMode(armorCutout));
+        assertEquals(com.nvidia.rtxremix.forge.entity.RenderLayerUtils.SurfaceMode.CUTOUT,
+                com.nvidia.rtxremix.forge.entity.RenderLayerUtils.surfaceMode(entitySolid));
+        assertEquals(com.nvidia.rtxremix.forge.entity.RenderLayerUtils.SurfaceMode.GLASS,
+                com.nvidia.rtxremix.forge.entity.RenderLayerUtils.surfaceMode(glassLayer));
+    }
+
+    @Test
     void testSurfaceModeClassificationForModdedLayers() {
         net.minecraft.resources.ResourceLocation dummyTex = new net.minecraft.resources.ResourceLocation("test", "tex");
         DummyCustomRenderType tombstoneGhost = new DummyCustomRenderType("tombstone:ghostly_shape", dummyTex, com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS);

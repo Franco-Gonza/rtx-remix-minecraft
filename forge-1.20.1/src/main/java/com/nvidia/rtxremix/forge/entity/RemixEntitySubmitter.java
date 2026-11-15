@@ -49,6 +49,22 @@ public class RemixEntitySubmitter {
     private int meshCreateCount = 0;
     private long frameIndex = 0;
 
+    private long solidBlendPNext = 0;
+    private long cutoutBlendPNext = 0;
+    private long translucentBlendPNext = 0;
+
+    private void ensureBlendExtensions() {
+        if (solidBlendPNext == 0) {
+            solidBlendPNext = InstanceInfoBlendEXT.textureTimesVertexColor().allocNative(0);
+        }
+        if (cutoutBlendPNext == 0) {
+            cutoutBlendPNext = InstanceInfoBlendEXT.textureTimesVertexColorAlphaTest(128).allocNative(0);
+        }
+        if (translucentBlendPNext == 0) {
+            translucentBlendPNext = InstanceInfoBlendEXT.textureTimesVertexColorAlphaBlend(1).allocNative(0);
+        }
+    }
+
     public RemixEntitySubmitter(RemixAPI api) {
         this.api = Objects.requireNonNull(api, "RemixAPI must not be null");
         initDefaultTextures();
@@ -121,7 +137,13 @@ public class RemixEntitySubmitter {
         }
 
         RemixCapturingConsumer consumer = layer.consumer();
-        long materialHandle = getOrCreateMaterial(layer.textureId(), RenderLayerUtils.surfaceMode(layer.renderLayer()));
+        RenderLayerUtils.SurfaceMode surfaceMode = RenderLayerUtils.surfaceMode(layer.renderLayer());
+        if (result.entity() instanceof net.minecraft.world.entity.player.Player || result.firstPersonLocalPlayer()) {
+            if (surfaceMode == RenderLayerUtils.SurfaceMode.TRANSLUCENT || surfaceMode == RenderLayerUtils.SurfaceMode.GLASS) {
+                surfaceMode = RenderLayerUtils.SurfaceMode.CUTOUT;
+            }
+        }
+        long materialHandle = getOrCreateMaterial(layer.textureId(), surfaceMode);
 
         int indexCount = computeIndexCount(layer.topology(), vertexCount);
         if (indexCount <= 0) {
@@ -227,6 +249,11 @@ public class RemixEntitySubmitter {
             return;
         }
 
+        ensureBlendExtensions();
+        long blendPNext = (surfaceMode == RenderLayerUtils.SurfaceMode.CUTOUT)
+                ? cutoutBlendPNext
+                : (surfaceMode == RenderLayerUtils.SurfaceMode.TRANSLUCENT ? translucentBlendPNext : solidBlendPNext);
+
         EntityPartKey partKey = new EntityPartKey(result.entity(), layer.layerIndex());
         Long existingInstance = retainedInstances.get(partKey);
         int categoryFlags = result.firstPersonLocalPlayer()
@@ -235,9 +262,9 @@ public class RemixEntitySubmitter {
 
         try {
             if (existingInstance != null) {
-                api.sceneInstanceUpdate(existingInstance, meshHandle, worldTransform.matrix, categoryFlags, 1, 0);
+                api.sceneInstanceUpdate(existingInstance, meshHandle, worldTransform.matrix, categoryFlags, 1, blendPNext);
             } else {
-                long instanceHandle = api.sceneInstanceAdd(meshHandle, worldTransform.matrix, categoryFlags, 1, 0);
+                long instanceHandle = api.sceneInstanceAdd(meshHandle, worldTransform.matrix, categoryFlags, 1, blendPNext);
                 retainedInstances.put(partKey, instanceHandle);
                 instancesByEntity.computeIfAbsent(result.entity(), k -> new ArrayList<>()).add(partKey);
             }
@@ -342,11 +369,22 @@ public class RemixEntitySubmitter {
             info.emissiveTexture = textureHandle;
             info.emissiveIntensity = 25.0f;
         } else if (surfaceMode == RenderLayerUtils.SurfaceMode.TRANSLUCENT) {
+            MaterialInfoOpaqueEXT opaque = MaterialInfoOpaqueEXT.builder()
+                    .albedoConstant(1.0f, 1.0f, 1.0f)
+                    .roughnessConstant(0.8f)
+                    .metallicConstant(0.0f)
+                    .blendEnabled(true)
+                    .blendType(MaterialInfoOpaqueEXT.BLEND_TYPE_ALPHA)
+                    .useDrawCallAlphaState(false)
+                    .build();
+            info.opaqueExt = opaque;
+        } else if (surfaceMode == RenderLayerUtils.SurfaceMode.GLASS) {
             MaterialInfoTranslucentEXT trans = MaterialInfoTranslucentEXT.builder()
                     .refractiveIndex(1.0f)
                     .transmittanceColor(1.0f, 1.0f, 1.0f)
                     .transmittanceMeasurementDistance(1.0f)
-                    .useDiffuseLayer(true)
+                    .useDiffuseLayer(false)
+                    .thinWall(0.01f)
                     .build();
             info.translucentExt = trans;
         } else {
@@ -564,6 +602,19 @@ public class RemixEntitySubmitter {
                 api.destroyTexture(defaultWhiteTexture);
             } catch (Exception ignored) {}
             defaultWhiteTexture = 0;
+        }
+
+        if (solidBlendPNext != 0) {
+            RemixBridge.freeExt(solidBlendPNext);
+            solidBlendPNext = 0;
+        }
+        if (cutoutBlendPNext != 0) {
+            RemixBridge.freeExt(cutoutBlendPNext);
+            cutoutBlendPNext = 0;
+        }
+        if (translucentBlendPNext != 0) {
+            RemixBridge.freeExt(translucentBlendPNext);
+            translucentBlendPNext = 0;
         }
     }
 
