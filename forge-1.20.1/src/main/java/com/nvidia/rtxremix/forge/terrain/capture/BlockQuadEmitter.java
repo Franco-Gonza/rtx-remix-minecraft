@@ -288,9 +288,21 @@ public final class BlockQuadEmitter {
                                    float lx, float ly, float lz) {
 
         ModelData modelData = ModelData.EMPTY;
-        net.minecraft.world.level.block.entity.BlockEntity be = world.getBlockEntity(mutablePos);
-        if (be != null) {
-            modelData = be.getModelData();
+        try {
+            java.lang.reflect.Method m = world.getClass().getMethod("getModelData", net.minecraft.core.BlockPos.class);
+            Object md = m.invoke(world, mutablePos);
+            if (md instanceof ModelData d) {
+                modelData = d;
+            }
+        } catch (Throwable ignored) {}
+        if (modelData == ModelData.EMPTY) {
+            net.minecraft.world.level.block.entity.BlockEntity be = world.getBlockEntity(mutablePos);
+            if (be != null) {
+                modelData = be.getModelData();
+            }
+        }
+        if (modelData == null) {
+            modelData = ModelData.EMPTY;
         }
 
         for (Direction dir : ALL_DIRECTIONS) {
