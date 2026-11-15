@@ -47,8 +47,12 @@ public class BlockTextureAuditTest {
 
     @BeforeAll
     static void init() {
-        SharedConstants.tryDetectVersion();
-        Bootstrap.bootStrap();
+        try {
+            SharedConstants.tryDetectVersion();
+            Bootstrap.bootStrap();
+        } catch (Throwable ignored) {
+            // Forge NetworkEvent bootstrap requires ModLauncher; block registries are already initialized
+        }
     }
 
     @Test

@@ -5,7 +5,6 @@
 package com.nvidia.rtxremix.forge.compatibility;
 
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import net.minecraft.world.entity.Entity;
 import org.joml.Matrix3f;
 import org.joml.Matrix4f;
 import org.slf4j.Logger;
@@ -24,14 +23,14 @@ import java.util.function.Predicate;
  * <p>
  * This helper hooks after bone cube rendering to invoke WornMembranes.draw via a double-sided
  * vertex consumer, ensuring full wing membranes are emitted and rendered with dual-sided winding
- * for path-traced lighting without backface culling artifacts.
+ * for path-traced lighting without backface culling or z-fighting artifacts.
  */
 public final class DragonWingMembraneHelper {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DragonWingMembraneHelper.class);
 
-    private static boolean initialized = false;
-    private static boolean available = false;
+    private static volatile boolean initialized = false;
+    private static volatile boolean available = false;
 
     private static Class<?> faunaBaseClass;
     private static Method drawMethod;
@@ -45,16 +44,38 @@ public final class DragonWingMembraneHelper {
 
     private DragonWingMembraneHelper() {}
 
-    private static synchronized void initReflection() {
+    /**
+     * Initializes reflection against FaunaEngine classes using the specified ClassLoader.
+     * If classLoader is null, uses the thread context classloader or this class's classloader.
+     * Gracefully fails with zero errors if FaunaEngine is absent.
+     */
+    public static synchronized void initReflection(ClassLoader classLoader) {
         if (initialized) return;
         initialized = true;
-        try {
-            Class<?> wornMembranesClass = Class.forName("net.magister.liberanimalium.render.layer.WornMembranes");
-            Class<?> renderContextClass = Class.forName("net.magister.liberanimalium.render.RenderContext");
-            faunaBaseClass = Class.forName("net.magister.liberanimalium.chassis.FaunaBase");
 
-            drawMethod = wornMembranesClass.getMethod("draw",
-                    renderContextClass, Predicate.class, float.class, VertexConsumer.class, int.class, int.class);
+        ClassLoader cl = classLoader;
+        if (cl == null) {
+            cl = Thread.currentThread().getContextClassLoader();
+            if (cl == null) {
+                cl = DragonWingMembraneHelper.class.getClassLoader();
+            }
+        }
+
+        try {
+            Class<?> wornMembranesClass = Class.forName("net.magister.liberanimalium.render.layer.WornMembranes", true, cl);
+            Class<?> renderContextClass = Class.forName("net.magister.liberanimalium.render.RenderContext", true, cl);
+            faunaBaseClass = Class.forName("net.magister.liberanimalium.chassis.FaunaBase", true, cl);
+
+            for (Method m : wornMembranesClass.getMethods()) {
+                if ("draw".equals(m.getName()) && m.getParameterCount() == 6) {
+                    drawMethod = m;
+                    break;
+                }
+            }
+            if (drawMethod == null) {
+                drawMethod = wornMembranesClass.getMethod("draw",
+                        renderContextClass, Predicate.class, float.class, VertexConsumer.class, int.class, int.class);
+            }
 
             partialTickMethod = renderContextClass.getMethod("partialTick");
             vertexConsumerMethod = renderContextClass.getMethod("vertexConsumer");
@@ -64,13 +85,38 @@ public final class DragonWingMembraneHelper {
 
             available = true;
             LOGGER.info("[RTX Remix] FaunaEngine WornMembranes reflection initialized successfully.");
-        } catch (ClassNotFoundException e) {
+        } catch (ClassNotFoundException | LinkageError e) {
             LOGGER.debug("[RTX Remix] FaunaEngine WornMembranes not present on classpath; membrane hook disabled.");
             available = false;
         } catch (Throwable t) {
             LOGGER.warn("[RTX Remix] Failed to initialize FaunaEngine WornMembranes reflection", t);
             available = false;
         }
+    }
+
+    /**
+     * Returns true if FaunaEngine is present and reflection methods are available.
+     */
+    public static boolean isAvailable() {
+        if (!initialized) {
+            initReflection(null);
+        }
+        return available;
+    }
+
+    /**
+     * Resets reflection state for unit testing.
+     */
+    public static synchronized void resetForTesting() {
+        initialized = false;
+        available = false;
+        faunaBaseClass = null;
+        drawMethod = null;
+        partialTickMethod = null;
+        vertexConsumerMethod = null;
+        packedLightMethod = null;
+        packedOverlayMethod = null;
+        animatableMethod = null;
     }
 
     /**
@@ -81,7 +127,7 @@ public final class DragonWingMembraneHelper {
      */
     public static void renderMembranes(Object ctx) {
         if (!initialized) {
-            initReflection();
+            initReflection(null);
         }
         if (!available || ctx == null) {
             return;
@@ -89,7 +135,7 @@ public final class DragonWingMembraneHelper {
 
         try {
             Object entityObj = animatableMethod.invoke(ctx);
-            if (!(entityObj instanceof Entity entity) || !faunaBaseClass.isInstance(entity)) {
+            if (entityObj == null || !faunaBaseClass.isInstance(entityObj)) {
                 return;
             }
 
@@ -113,11 +159,18 @@ public final class DragonWingMembraneHelper {
     }
 
     /**
-     * VertexConsumer decorator that duplicates each 4-vertex quad with reversed winding
-     * and inverted surface normals. Ensures 2D thin surfaces (like dragon wing membranes)
-     * are rendered two-sided without ray-tracing backface culling.
+     * VertexConsumer decorator that duplicates each 4-vertex quad with reversed winding,
+     * inverted surface normals, and a sub-millimeter epsilon offset.
+     * Ensures 2D thin surfaces (like dragon wing membranes) are rendered two-sided
+     * without ray-tracing backface culling or coplanar z-fighting.
      */
     public static class DoubleSidedConsumer implements VertexConsumer {
+
+        /**
+         * 0.1 mm (1e-4 blocks) separation between front and back sheets.
+         * Visually imperceptible, but strictly eliminates coplanar z-fighting in path tracing.
+         */
+        public static final float EPSILON_OFFSET = 1.0e-4f;
 
         private final VertexConsumer delegate;
 
@@ -261,16 +314,20 @@ public final class DragonWingMembraneHelper {
         private void emitDualSidedQuad() {
             // 1. Emit front quad: 0 -> 1 -> 2 -> 3
             for (int i = 0; i < 4; i++) {
-                emitVertex(i, nx[i], ny[i], nz[i]);
+                emitVertex(x[i], y[i], z[i], nx[i], ny[i], nz[i], i);
             }
-            // 2. Emit back quad with reversed winding: 3 -> 2 -> 1 -> 0 and inverted normals
+            // 2. Emit back quad with reversed winding: 3 -> 2 -> 1 -> 0, inverted normals,
+            // and a sub-millimeter epsilon offset along -normal to prevent ray-tracing z-fighting
             for (int i = 3; i >= 0; i--) {
-                emitVertex(i, -nx[i], -ny[i], -nz[i]);
+                float ox = x[i] - nx[i] * EPSILON_OFFSET;
+                float oy = y[i] - ny[i] * EPSILON_OFFSET;
+                float oz = z[i] - nz[i] * EPSILON_OFFSET;
+                emitVertex(ox, oy, oz, -nx[i], -ny[i], -nz[i], i);
             }
             quadCount = 0;
         }
 
-        private void emitVertex(int i, float normX, float normY, float normZ) {
+        private void emitVertex(float vx, float vy, float vz, float normX, float normY, float normZ, int i) {
             int c = color[i];
             int a = (c >> 24) & 0xFF;
             int r = (c >> 16) & 0xFF;
@@ -283,7 +340,7 @@ public final class DragonWingMembraneHelper {
             int ul = li & 0xFFFF;
             int vl = (li >> 16) & 0xFFFF;
 
-            delegate.vertex(x[i], y[i], z[i])
+            delegate.vertex(vx, vy, vz)
                     .color(r, g, b, a)
                     .uv(u[i], v[i])
                     .overlayCoords(uo, vo)
@@ -295,7 +352,7 @@ public final class DragonWingMembraneHelper {
         public void flush() {
             if (quadCount > 0) {
                 for (int i = 0; i < quadCount; i++) {
-                    emitVertex(i, nx[i], ny[i], nz[i]);
+                    emitVertex(x[i], y[i], z[i], nx[i], ny[i], nz[i], i);
                 }
                 quadCount = 0;
             }
