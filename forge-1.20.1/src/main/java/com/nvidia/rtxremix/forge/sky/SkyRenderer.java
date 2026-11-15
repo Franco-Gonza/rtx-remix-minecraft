@@ -208,11 +208,10 @@ public class SkyRenderer {
                             .volumetricRadianceScale(1.0f)
                             .build())
                     .build();
-            long newHandle = api.createLight(lightInfo);
-            if (sunLightHandle != 0 && sunLightHandle != newHandle) {
-                try { api.destroyLight(sunLightHandle); } catch (Exception ignored) {}
+            long handle = api.createLight(lightInfo);
+            if (handle != 0) {
+                sunLightHandle = handle;
             }
-            sunLightHandle = newHandle;
         } catch (Exception e) {
             LOGGER.warn("Sun light update failed: {}", e.getMessage());
         }
@@ -536,17 +535,17 @@ public class SkyRenderer {
                     .yAxis(0, 0, 1)
                     .ySize(SKY_AMBIENT_RECT_HALF_SIZE)
                     .direction(0, -1, 0)
+                    .volumetricRadianceScale(0.0f)
                     .build();
             LightInfo lightInfo = LightInfo.builder()
                     .hash(0x534B_595F_414D_4249L) // "SKY_AMBI"
                     .radiance(r, g, b)
                     .rectExt(rectExt)
                     .build();
-            long newHandle = api.createLight(lightInfo);
-            if (skyAmbientRectHandle != 0 && skyAmbientRectHandle != newHandle) {
-                try { api.destroyLight(skyAmbientRectHandle); } catch (Exception ignored) {}
+            long handle = api.createLight(lightInfo);
+            if (handle != 0) {
+                skyAmbientRectHandle = handle;
             }
-            skyAmbientRectHandle = newHandle;
         } catch (Exception e) {
             LOGGER.warn("Sky ambient rect draw failed: {}", e.getMessage());
         }

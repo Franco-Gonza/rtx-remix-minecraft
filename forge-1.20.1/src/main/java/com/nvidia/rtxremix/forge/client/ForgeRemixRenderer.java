@@ -475,7 +475,7 @@ public final class ForgeRemixRenderer {
                             .transmittanceColor(0.97f, 0.97f, 0.97f)
                             .transmittanceMeasurementDistance(0.35f)
                             .thinWall(0.01f)
-                            .useDiffuseLayer(true)
+                            .useDiffuseLayer(false)
                             .build();
                     MaterialInfo transInfo = MaterialInfo.builder()
                             .hash(0x4D41_545F_5452_414EL) // "MAT_TRAN"
