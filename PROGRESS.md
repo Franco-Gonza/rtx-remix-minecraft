@@ -19,20 +19,20 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
 
 ## 2. Resultados de la Suite de Regresiones Automatizadas
 
-* **Estado de Ejecución:** `BUILD SUCCESSFUL` (13/13 tareas ejecutadas, 23s en test completo `--rerun-tasks`).
-* **Total Tests Ejecutados:** 40
-* **Total Aprobados:** 40 (100% pass rate)
+* **Estado de Ejecución:** `BUILD SUCCESSFUL` (46 tests en ejecución limpia, 24s).
+* **Total Tests Ejecutados:** 46
+* **Total Aprobados:** 46 (100% pass rate)
 * **Fallos / Errores / Omitidos:** 0 / 0 / 0
 
 ### Desglose por Suite de Pruebas:
 | Test Suite | Pruebas | Aprobados | Fallos | Errores | Omitidos | Tiempo |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| `AtlasAnimationForwarderTest` | 8 | 8 | 0 | 0 | 0 | 0.566s |
-| `BlockTextureAuditTest` | 8 | 8 | 0 | 0 | 0 | 0.134s |
-| `DragonWingMembraneTest` | 2 | 2 | 0 | 0 | 0 | 0.009s |
-| `EntityPipelineTest` | 15 | 15 | 0 | 0 | 0 | 0.099s |
-| `LabPBRConverterTest` | 5 | 5 | 0 | 0 | 0 | 0.005s |
-| `CanonicalIndexBufferTest` | 2 | 2 | 0 | 0 | 0 | 0.012s |
+| `AtlasAnimationForwarderTest` | 11 | 11 | 0 | 0 | 0 | 0.627s |
+| `BlockTextureAuditTest` | 8 | 8 | 0 | 0 | 0 | 0.083s |
+| `DragonWingMembraneTest` | 3 | 3 | 0 | 0 | 0 | 1.298s |
+| `EntityPipelineTest` | 15 | 15 | 0 | 0 | 0 | 0.080s |
+| `LabPBRConverterTest` | 7 | 7 | 0 | 0 | 0 | 0.005s |
+| `CanonicalIndexBufferTest` | 2 | 2 | 0 | 0 | 0 | 0.011s |
 
 ---
 
@@ -243,8 +243,16 @@ Para certificar de forma definitiva los puntos marcados como **NO VERIFICADO**, 
 * **Reglas Analíticas:** `BlockLightRuleManager` registra fuentes de luz analíticas para `minecraft:fire` (radio 8, intensidad 1.0, color [1.0, 0.6, 0.2]), `minecraft:soul_fire` (color [0.2, 0.6, 1.0]), campfires y antorchas.
 * **Partículas Emisivas:** `RemixParticleRenderer` activa el canal de emisión en el atlas de partículas, haciendo que humo encendido, chispas y llamas proyecten luz volumétrica en el espacio de juego.
 
-### 11.5 Sincronización Animada de Atlases PBR (Agente D)
+### 11.5 Sincronización Animada de Atlases PBR (Agente D & A)
 * **Commit:** `2aa3f2c`
 * **Funcionalidad:** `AtlasAnimationForwarder` avanza en tándem los cuadros de animación de las texturas difusas junto con sus respectivos cuadros en los atlases `_n` y `_s`.
 * **Efecto:** Mantiene perfecta alineación temporal entre el albedo en movimiento y sus normales/rugosidad en fluidos y bloques animados (lava, portales, fuego).
-* **Validación:** 8/8 tests aprobados en `AtlasAnimationForwarderTest`.
+* **Validación:** 11/11 tests aprobados en `AtlasAnimationForwarderTest`.
+
+### 11.6 Subsurface Scattering (SSS), Dieléctricos F0 y Multi-Canal PBR (Agente A)
+* **Funcionalidad:**
+  * **LabPBR 1.3 Reflectancia Dieléctrica y Conductores:** Conservación de reflectancia dieléctrica $F_0 \in [0.0, 0.08]$ para valores de canal verde $0..229$, cálculo de IOR derivado ($1.0..1.79$) y detección de metales conductores en $230..255$.
+  * **Generación de Atlases SSS:** `BlockTextureManager` genera atlases de espesor (`sssAtlas`) a partir del canal azul de `_s` y de albedo de dispersión simple (`sssAlbedoAtlas`) a partir de `_sss` modulado con AO.
+  * **Binding SSS en Runtime:** `ForgeRemixRenderer` enlaza `MaterialInfoOpaqueSubsurfaceEXT` con perfil de difusión para terreno sólido y dispersión delgada basada en espesor para follaje/cutout.
+  * **Multi-Formato en Animación de Texturas:** `AtlasAnimationForwarder` soporta canales independientes (`NORMAL`, `HEIGHT`, `ROUGHNESS`, `METALLIC`, `EMISSIVE`, `SSS`) con despacho de formato nativo `R8_UNORM` (1 bpp) y `RGBA8_UNORM` (4 bpp), ciclo de vida off-heap seguro mediante `DirectBufferPool`.
+* **Validación:** 7/7 tests aprobados en `LabPBRConverterTest`, 11/11 tests en `AtlasAnimationForwarderTest` y 15/15 tests en `EntityPipelineTest`.
