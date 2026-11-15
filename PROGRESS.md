@@ -36,6 +36,7 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
 
 ## 3. Historial de Commits Integrados
 
+* `38ca08c` - `docs(qa): finalize progress report with phase 3-5 verification and full modpack compatibility matrix` (Agente F)
 * `836ed8d` - `perf(forge): implement frame-budget chunk installation pacing to prevent frametime spikes` (Agente E)
 * `130c2c4` - `fix(forge): align camera motion vectors for dlss/fg and propagate reflex runtime config` (Agente C)
 * `5d9b496` - `feat(forge): enhance mod geometry capture and entity sweep prioritization` (Agente D & E)
@@ -107,6 +108,7 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
   * `rtx.volumetrics.enable = True` (Froxels y niebla volumétrica activos).
   * `rtx.volumetrics.enableAtmosphere = True` (Dispersión atmosférica y God Rays solares/lunares).
   * `rtx.volumetrics.froxelGridDimensions = 128, 64, 128` (Resolución cúbica calibrada sin sintaxis rota).
+  * `rtx.volumetrics.froxelGridSizeDepth = 256.0` (Profundidad de froxel corregida numéricamente).
   * `rtx.dlfg.enable = True` (DLSS 3 Frame Generation activo por hardware).
   * `rtx.dlfg.presentOnGraphicsQueue = True` (Presentación directa en cola gráfica Vulkan).
   * `rtx.reflex.mode = 2` (NVIDIA Reflex Low Latency + Boost).
@@ -118,6 +120,54 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
 ## 7. Artefactos de Entrega y Verificación
 
 1. **JAR Compilado:** [rtx-remix-forge-1.20.1-0.1.0.jar](file:///D:/proyectos/RTX%20MC%201.20.1/forge-1.20.1/build/libs/rtx-remix-forge-1.20.1-0.1.0.jar) (304.952 bytes, 15/11/2026 01:53:28).
-2. **JAR Desplegado en Minecraft:** [rtx-remix-forge-1.20.1-0.1.0.jar](file:///C:/Users/franc/AppData/Roaming/.minecraft/mods/rtx-remix-forge-1.20.1-0.1.0.jar) (Copia de respaldo en `.bak` preservada).
-3. **Mandato del Proyecto:** [GOAL_RTX_FORGE.md](file:///D:/proyectos/RTX%20MC%201.20.1/GOAL_RTX_FORGE.md).
-4. **Seguimiento de Progreso:** [PROGRESS.md](file:///D:/proyectos/RTX%20MC%201.20.1/PROGRESS.md).
+2. **JAR Desplegado en Minecraft:** [rtx-remix-forge-1.20.1-0.1.0.jar](file:///C:/Users/franc/AppData/Roaming/.minecraft/mods/rtx-remix-forge-1.20.1-0.1.0.jar) (SHA-256: `3F4BC92D0B87544CC381A02B84AF2453552FAE8395E5D373B881938EA73720DA`).
+3. **Dependencia Nativa:** [remixbridge.dll](file:///C:/Users/franc/AppData/Roaming/.minecraft/remix-sdk/remixbridge.dll) (910.336 bytes | SHA-256: `749A550EA395CE499AF7C813038B78FDF169F0FDDC2CF27D729ED21984D3E9F6`).
+4. **Mandato del Proyecto:** [GOAL_RTX_FORGE.md](file:///D:/proyectos/RTX%20MC%201.20.1/GOAL_RTX_FORGE.md).
+5. **Seguimiento de Progreso:** [PROGRESS.md](file:///D:/proyectos/RTX%20MC%201.20.1/PROGRESS.md).
+
+---
+
+## 8. Matriz Maestra de Aceptación (Master Acceptance Matrix)
+
+Estado estricto de certificación técnica conforme al mandato de no auto-declaración de éxito sin prueba física:
+
+| Criterio / Subsistema | Alcance Evaluado | Método de Verificación | Estado | Evidencia Concreta |
+| :--- | :--- | :--- | :---: | :--- |
+| **Arquitectura Forge & JDK 21** | Compilación, bytecode, Mixins y refmaps | Gradle Build & Test (13/13 tareas) | **APROBADO** | `BUILD SUCCESSFUL`, `EntityPipelineTest` 12/12. |
+| **Interoperabilidad JNI & Off-heap** | `remixbridge.dll`, buffers directos 64B, `GlInterop` | Test unitario & hash binario | **APROBADO** | DLL SHA-256 coincide byte a byte (`749A550E...`). |
+| **Configuración Runtime (rtx.conf)** | DLSS, DLFG, Reflex, Froxels, thinWall | Parser de strings en archivo activo | **APROBADO** | Claves presentes en `%APPDATA%/.minecraft/rtx.conf`. |
+| **Vectores de Movimiento (DLSS/DLFG)** | Desacople de `updateCamera(1.0f)` y matriz reproyección | Auditoría de bytecode y AST Java | **APROBADO** | Cámara evaluada con delta temporal real en frame loop. |
+| **Topología y Buffers Dinámicos** | Primitivas `TRIANGLES`/`FAN`, expansión >16k | Unit tests de pipeline de entidad | **APROBADO** | `testCapturingConsumerDynamicResizeBeyond16384` passed. |
+| **BLAS Cache & Hashing** | Reemplazo de hash aleatorio por hash espacial 64-bit | Inspección de clase `RemixEntitySubmitter` | **APROBADO** | Hashes deterministas de instancia y material validados. |
+| **Presupuesto de Chunks (Pacing)** | Frame budget 3.5ms juego / 25ms pantalla de carga | Auditoría de `ForgeRemixRenderer` | **APROBADO** | Deadline `System.nanoTime()` activo en bucle de drenaje. |
+| **Mapeo de Mods (26 mods)** | Carga de clases, modelos baked, cutout y atlases | Matriz estática y tests de texturas | **APROBADO** | 26 mods mapeados sin exclusión ni degradación. |
+| **Presencia Óptica de God Rays en Vivo** | Haces de luz solar/lunar a través de follaje en ventana | Ventana de render Vulkan en cliente | **NO VERIFICADO** | *Requiere inspección visual en cliente vivo.* |
+| **Activación Real de DLFG en Hardware** | Generación de cuadros en cola Vulkan Ada Lovelace | Overlay Alt+X y tasa Hz en pantalla | **NO VERIFICADO** | *Requiere verificación interactiva en cliente vivo.* |
+| **Fluidez y Ausencia de Jitter en Cámara** | Ausencia de temblor o desgarro en 3440x1417 | Movimiento de ratón en sesión activa | **NO VERIFICADO** | *Requiere prueba de control manual en cliente vivo.* |
+| **Render In-Game de Efectos Moddeados** | Lásers de Alex's Caves y modelos de Book of Dragons | Spawn y disparo en mundo en vivo | **NO VERIFICADO** | *Requiere disparo y visualización en mundo vivo.* |
+| **Estabilidad de Frametimes a 16 Chunks** | Percentil 1% Low sostenido durante exploración | Benchmark de vuelo de 5 minutos | **NO VERIFICADO** | *Requiere recorrido en tiempo real en mundo vivo.* |
+
+---
+
+## 9. Checklist de Verificación Visual en Juego (Manual Live Window Checklist)
+
+Para certificar de forma definitiva los puntos marcados como **NO VERIFICADO**, el usuario debe ejecutar los siguientes pasos dentro de Minecraft:
+
+1. **Verificación de Haces de Luz Volumétricos (God Rays):**
+   * Configurar la hora del mundo al atardecer o amanecer (`/time set 12500` o `/time set 23000`).
+   * Posicionarse bajo la copa de un árbol moddeado (Dynamic Trees o Biomes O' Plenty) mirando hacia el disco solar.
+   * *Criterio de Aprobación:* Rayos de luz volumétricos claramente definidos proyectados entre las ramas e interactuando con la niebla atmosférica.
+2. **Verificación de DLSS & Frame Generation por Hardware:**
+   * Presionar **Alt+X** para abrir el menú de desarrollo de NVIDIA RTX Remix.
+   * Navegar a la pestaña **DLSS & Post-Processing**.
+   * *Criterio de Aprobación:* Confirmar que **Frame Generation** figure como `Active (Hardware)` y que el contador de FPS en monitor duplique la tasa del render vanilla sin introducir retraso perceptible de entrada (Reflex Boost activo).
+3. **Verificación de Estabilidad de Movimiento y Cámara:**
+   * Mover la cámara rápidamente de izquierda a derecha en resolución nativa **3440x1417**.
+   * *Criterio de Aprobación:* Cero temblores (jitter), ausencia de artefactos de estiramiento en la vegetación o bordes de pantalla (vectores de movimiento sincronizados).
+4. **Verificación de Geometría de Mods (Alex's Caves & Book of Dragons):**
+   * Equipar y disparar un raygun de Alex's Caves o aproximarse a una fuente de radiación/haz de luz.
+   * Spawnear un dragón de Book of Dragons (`/summon bookofdragons:dragon` o huevo de spawn).
+   * *Criterio de Aprobación:* El láser/haz se renderiza continuo como geometría volumétrica/translúcida; el dragón presenta su textura genética correspondiente sin capas invisibles ni descarte a negro.
+5. **Verificación de Pacing de Chunks y Rendimiento Sostenido:**
+   * En modo creativo, volar en línea recta a 16 chunks de renderizado durante 2 minutos.
+   * *Criterio de Aprobación:* La tasa de cuadros se mantiene estable (80–110 FPS con DLSS Balanced) sin caídas abruptas a <20 FPS al cruzar límites de sección de chunks.
