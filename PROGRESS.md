@@ -224,3 +224,22 @@ Para certificar de forma definitiva los puntos marcados como **NO VERIFICADO**, 
   * `forge-1.20.1/src/test/java/com/nvidia/rtxremix/forge/BlockTextureAuditTest.java`
 * **Solución Implementada:** Asignación incondicional de la categoría `CAT_EMISSIVE` a bloques y fluidos de lava, cálculo de normales de gradiente de superficie para fluidos, inyección de emisión superficial PBR en `DirectQuadWriter`, y registro automático en el pool de luces dinámicas ReSTIR.
 * **Validación:** 7/7 tests aprobados en `BlockTextureAuditTest` incluyendo `testLavaEmissiveClassification`.
+
+---
+
+## 11. Implementación LabPBR y Binding PBR (Goal 2 - Prioridad 1 y 2)
+
+* **Commit:** `2aa3f2c`
+* **Agente Responsable:** Agente A (Arquitectura & Shading PBR)
+* **Alcance Implementado:**
+  * **LabPBRConverter:** Port completo de la especificación LabPBR: `_n` (normales tangenciales con Z reconstruida, AO aplicado in-place en albedo, mapa de altura en alpha para POM), `_s` (smoothness a roughness lineal cuadrática, reflectancia F0 a metálico con umbral 230, SSS en azul >=65, emisión en alpha <255), y `_sss` (color de dispersión simple).
+  * **BlockTextureManager:** Generación de atlases paralelos (`normalAtlas`, `heightAtlas`, `roughnessAtlas`, `metallicAtlas`, `emissiveAtlas`) leyendo los sidecars del resource pack.
+  * **ForgeRemixRenderer:** Binding de handles nativos `normalTexture`, `roughnessTexture`, `metallicTexture`, `heightTexture` (displaceIn 0.25f) y `emissiveTexture` a `MaterialInfo` y `MaterialInfoOpaqueEXT`.
+  * **Salvaguarda Anti-Espejo:** En ausencia de mapas PBR auxiliares, los materiales mantienen valores por defecto no metálicos dieléctricos (`metallic 0.0`, `roughness 0.80`) evitando reflejos especulares de espejo en superficies estándar.
+* **Archivos Modificados:**
+  * `forge-1.20.1/src/main/java/com/nvidia/rtxremix/forge/texture/LabPBRConverter.java`
+  * `forge-1.20.1/src/main/java/com/nvidia/rtxremix/forge/texture/BlockTextureManager.java`
+  * `forge-1.20.1/src/main/java/com/nvidia/rtxremix/forge/client/ForgeRemixRenderer.java`
+  * `forge-1.20.1/src/test/java/com/nvidia/rtxremix/forge/LabPBRConverterTest.java`
+* **Validación:** 100% de tests unitarios aprobados en `LabPBRConverterTest` y suite completa de Forge (`BUILD SUCCESSFUL in 23s`).
+
