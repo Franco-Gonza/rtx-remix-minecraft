@@ -6,6 +6,7 @@ package com.nvidia.rtxremix.forge.entity;
 
 import com.mojang.blaze3d.platform.NativeImage;
 import com.nvidia.rtxremix.*;
+import com.nvidia.rtxremix.forge.util.CanonicalIndexBuffer;
 import com.nvidia.rtxremix.forge.util.DirectBufferPool;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
@@ -128,10 +129,12 @@ public class RemixEntitySubmitter {
         }
 
         int vertexBufferSize = vertexCount * HardcodedVertex.STRIDE;
-        int indexBufferSize = indexCount * Integer.BYTES;
 
         ByteBuffer vertexBuffer = DirectBufferPool.acquire(vertexBufferSize);
-        ByteBuffer indexBuffer = DirectBufferPool.acquire(indexBufferSize);
+        boolean isCanonicalIndex = (layer.topology() == RenderLayerUtils.Topology.QUADS);
+        ByteBuffer indexBuffer = isCanonicalIndex
+                ? CanonicalIndexBuffer.INSTANCE.getBuffer(indexCount)
+                : DirectBufferPool.acquire(indexCount * Integer.BYTES);
 
         long meshHandle = 0;
         try {
@@ -145,11 +148,16 @@ public class RemixEntitySubmitter {
             float[] tv = consumer.getUvsV();
             int[] colors = consumer.getColors();
 
+            long geomHash = 0xcbf29ce484222325L;
             for (int i = 0; i < vertexCount; i++) {
-                vertexBuffer.putFloat(px[i]).putFloat(py[i]).putFloat(pz[i]);
+                float x = px[i];
+                float y = py[i];
+                float z = pz[i];
+                vertexBuffer.putFloat(x).putFloat(y).putFloat(z);
                 vertexBuffer.putFloat(nx[i]).putFloat(ny[i]).putFloat(nz[i]);
                 vertexBuffer.putFloat(tu[i]).putFloat(tv[i]);
-                vertexBuffer.putInt(colors[i]);
+                int c = colors[i];
+                vertexBuffer.putInt(c);
                 vertexBuffer.putInt(0); // texcoordBoundsMin
                 vertexBuffer.putInt(0); // texcoordBoundsMax
                 vertexBuffer.putInt(0); // _pad0
@@ -157,11 +165,19 @@ public class RemixEntitySubmitter {
                 vertexBuffer.putInt(0); // _pad2
                 vertexBuffer.putInt(0); // _pad3
                 vertexBuffer.putInt(0); // _pad4
+
+                int bits = Float.floatToRawIntBits(x)
+                        ^ (Float.floatToRawIntBits(y) * 31)
+                        ^ (Float.floatToRawIntBits(z) * 1000003)
+                        ^ c;
+                geomHash = (geomHash ^ bits) * 1099511628211L;
             }
             vertexBuffer.flip();
 
-            buildIndices(indexBuffer, layer.topology(), vertexCount);
-            indexBuffer.flip();
+            if (!isCanonicalIndex) {
+                buildIndices(indexBuffer, layer.topology(), vertexCount);
+                indexBuffer.flip();
+            }
 
             MeshInfoSurfaceTriangles surface = new MeshInfoSurfaceTriangles();
             surface.vertexBuffer = vertexBuffer;
@@ -170,7 +186,23 @@ public class RemixEntitySubmitter {
             surface.indexCount = indexCount;
             surface.material = materialHandle;
 
-            long meshHash = java.util.concurrent.ThreadLocalRandom.current().nextLong() | 1L;
+            int entityId = (result.entity() instanceof Entity e)
+                    ? e.getId()
+                    : (result.entity() != null ? System.identityHashCode(result.entity()) : 0);
+
+            long meshHash = ((long) entityId * 31L + layer.layerIndex()) * 31L + vertexCount;
+            if (result.entityTypeKey() != null) {
+                meshHash = meshHash * 31L + result.entityTypeKey().hashCode();
+            }
+            if (layer.textureId() != null) {
+                meshHash = meshHash * 31L + layer.textureId().hashCode();
+            }
+            meshHash = meshHash * 31L + (layer.topology() != null ? layer.topology().ordinal() : 0);
+            meshHash ^= geomHash;
+            if (meshHash == 0) {
+                meshHash = 1L;
+            }
+
             MeshInfo meshInfo = MeshInfo.builder()
                     .hash(meshHash)
                     .surfaces(surface)
@@ -186,7 +218,9 @@ public class RemixEntitySubmitter {
             return;
         } finally {
             DirectBufferPool.release(vertexBuffer);
-            DirectBufferPool.release(indexBuffer);
+            if (!isCanonicalIndex) {
+                DirectBufferPool.release(indexBuffer);
+            }
         }
 
         if (meshHandle == 0) {
@@ -226,6 +260,10 @@ public class RemixEntitySubmitter {
             return (vertexCount / 4) * 6;
         } else if (topology == RenderLayerUtils.Topology.TRIANGLE_STRIP) {
             return Math.max(0, (vertexCount - 2) * 3);
+        } else if (topology == RenderLayerUtils.Topology.TRIANGLES) {
+            return (vertexCount / 3) * 3;
+        } else if (topology == RenderLayerUtils.Topology.TRIANGLE_FAN) {
+            return Math.max(0, (vertexCount - 2) * 3);
         }
         return 0;
     }
@@ -253,6 +291,17 @@ public class RemixEntitySubmitter {
                     indexBuffer.putInt(i);
                     indexBuffer.putInt(i + 2);
                 }
+            }
+        } else if (topology == RenderLayerUtils.Topology.TRIANGLES) {
+            int tris = (vertexCount / 3) * 3;
+            for (int i = 0; i < tris; i++) {
+                indexBuffer.putInt(i);
+            }
+        } else if (topology == RenderLayerUtils.Topology.TRIANGLE_FAN) {
+            for (int i = 1; i < vertexCount - 1; i++) {
+                indexBuffer.putInt(0);
+                indexBuffer.putInt(i);
+                indexBuffer.putInt(i + 1);
             }
         }
     }

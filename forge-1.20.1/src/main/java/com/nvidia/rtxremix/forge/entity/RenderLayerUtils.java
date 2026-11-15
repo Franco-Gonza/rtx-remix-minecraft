@@ -21,6 +21,8 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
 import java.util.WeakHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Extracts layer-level properties required by the RTX Remix entity capture pipeline.
@@ -28,6 +30,7 @@ import java.util.WeakHashMap;
 public final class RenderLayerUtils {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(RenderLayerUtils.class);
+    private static final Pattern RESOURCE_PATTERN = Pattern.compile("([a-z0-9_.-]+:[a-z0-9_./-]+)");
 
     public enum SurfaceMode {
         OPAQUE,
@@ -39,7 +42,9 @@ public final class RenderLayerUtils {
 
     public enum Topology {
         QUADS,
-        TRIANGLE_STRIP
+        TRIANGLE_STRIP,
+        TRIANGLES,
+        TRIANGLE_FAN
     }
 
     public static final ResourceLocation UNTEXTURED_LAYER_ID =
@@ -86,7 +91,7 @@ public final class RenderLayerUtils {
             }
         }
 
-        // 2. Secondary path: Reflection supporting both dev (Mojmap) and production (SRG) field names
+        // 2. Secondary path: Reflection on CompositeState & textureState (SRG + Mojmap + generic fields)
         try {
             Class<?> clazz = layer.getClass();
             Field stateField = findField(clazz, "state", "f_110511_");
@@ -119,6 +124,11 @@ public final class RenderLayerUtils {
                                     return loc;
                                 }
                             }
+                            // Inspect all fields of textureState for custom mod shards
+                            Optional<ResourceLocation> customShardLoc = extractResourceLocationFromObject(textureState);
+                            if (customShardLoc.isPresent()) {
+                                return customShardLoc;
+                            }
                         }
                     }
                 }
@@ -127,7 +137,13 @@ public final class RenderLayerUtils {
             LOGGER.debug("Secondary reflection texture extraction failed: {}", t.getMessage());
         }
 
-        // 3. Fallback name heuristic if reflection cannot resolve
+        // 3. Tertiary path: Direct reflection on custom RenderType classes (Citadel, Alex's Caves, Tombstone)
+        Optional<ResourceLocation> directLoc = extractResourceLocationFromObject(layer);
+        if (directLoc.isPresent()) {
+            return directLoc;
+        }
+
+        // 4. Fallback name heuristics if reflection cannot resolve
         String name = layer.toString();
         if (name.contains("species_cutout_") || name.contains("species_translucent_")) {
             String prefix = name.contains("species_cutout_") ? "species_cutout_" : "species_translucent_";
@@ -162,6 +178,60 @@ public final class RenderLayerUtils {
             }
         }
 
+        // Regex search for any embedded namespace:textures/... pattern in layer name
+        Matcher matcher = RESOURCE_PATTERN.matcher(name);
+        while (matcher.find()) {
+            ResourceLocation loc = ResourceLocation.tryParse(matcher.group(1));
+            if (loc != null && (loc.getPath().endsWith(".png") || loc.getPath().contains("textures/"))) {
+                return Optional.of(loc);
+            }
+        }
+
+        return Optional.empty();
+    }
+
+    private static Optional<ResourceLocation> extractResourceLocationFromObject(Object obj) {
+        if (obj == null) return Optional.empty();
+        Class<?> current = obj.getClass();
+        while (current != null && current != Object.class && current != RenderType.class && current != RenderStateShard.class) {
+            for (Field f : current.getDeclaredFields()) {
+                try {
+                    if (ResourceLocation.class.isAssignableFrom(f.getType())) {
+                        f.setAccessible(true);
+                        ResourceLocation loc = (ResourceLocation) f.get(obj);
+                        if (loc != null) {
+                            return Optional.of(loc);
+                        }
+                    } else if (Optional.class.isAssignableFrom(f.getType())) {
+                        f.setAccessible(true);
+                        Object val = f.get(obj);
+                        if (val instanceof Optional<?> opt && opt.isPresent() && opt.get() instanceof ResourceLocation loc) {
+                            return Optional.of(loc);
+                        }
+                    }
+                } catch (Throwable ignored) {}
+            }
+            for (Method m : current.getDeclaredMethods()) {
+                if (m.getParameterCount() == 0) {
+                    try {
+                        if (ResourceLocation.class.isAssignableFrom(m.getReturnType())) {
+                            m.setAccessible(true);
+                            ResourceLocation loc = (ResourceLocation) m.invoke(obj);
+                            if (loc != null) {
+                                return Optional.of(loc);
+                            }
+                        } else if (Optional.class.isAssignableFrom(m.getReturnType())) {
+                            m.setAccessible(true);
+                            Object val = m.invoke(obj);
+                            if (val instanceof Optional<?> opt && opt.isPresent() && opt.get() instanceof ResourceLocation loc) {
+                                return Optional.of(loc);
+                            }
+                        }
+                    } catch (Throwable ignored) {}
+                }
+            }
+            current = current.getSuperclass();
+        }
         return Optional.empty();
     }
 
@@ -192,18 +262,23 @@ public final class RenderLayerUtils {
     }
 
     public static Optional<Topology> topology(RenderType layer) {
+        if (layer == null) return Optional.empty();
         VertexFormat.Mode mode = layer.mode();
         if (mode == VertexFormat.Mode.QUADS) {
             return Optional.of(Topology.QUADS);
         } else if (mode == VertexFormat.Mode.TRIANGLE_STRIP) {
             return Optional.of(Topology.TRIANGLE_STRIP);
+        } else if (mode == VertexFormat.Mode.TRIANGLES) {
+            return Optional.of(Topology.TRIANGLES);
+        } else if (mode == VertexFormat.Mode.TRIANGLE_FAN) {
+            return Optional.of(Topology.TRIANGLE_FAN);
         }
         return Optional.empty();
     }
 
     public static boolean isCapturableUntexturedLayer(RenderType layer) {
         return capturableTexture(layer).isEmpty()
-                && topology(layer).filter(t -> t == Topology.TRIANGLE_STRIP).isPresent();
+                && topology(layer).filter(t -> t != Topology.QUADS).isPresent();
     }
 
     public static boolean isStreamedPerFrame(RenderType layer) {
@@ -212,26 +287,54 @@ public final class RenderLayerUtils {
 
     private static boolean isStreamedPerFrameUncached(RenderType layer) {
         boolean beaconBeam = layer.toString().contains("beacon_beam");
-        return topology(layer).filter(t -> t == Topology.TRIANGLE_STRIP).isPresent() || beaconBeam;
+        return topology(layer).filter(t -> t != Topology.QUADS).isPresent() || beaconBeam;
     }
 
     public static SurfaceMode surfaceMode(RenderType layer) {
         if (layer == null) return SurfaceMode.CUTOUT;
 
+        // Check CompositeState transparencyState if available
+        if ((Object) layer instanceof CompositeRenderTypeAccessor multiPhase) {
+            try {
+                RenderType.CompositeState phases = multiPhase.rtxremix$getState();
+                if ((Object) phases instanceof CompositeStateAccessor stateAccessor) {
+                    RenderStateShard.TransparencyStateShard transparency = stateAccessor.rtxremix$getTransparencyState();
+                    if (transparency != null) {
+                        String transName = transparency.toString().toLowerCase();
+                        if (transName.contains("additive") || transName.contains("lightning")) {
+                            return SurfaceMode.EMISSIVE;
+                        }
+                        if (transName.contains("translucent")) {
+                            return SurfaceMode.TRANSLUCENT;
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {}
+        }
+
         String name = layer.toString().toLowerCase();
         if (name.contains("end_portal") || name.contains("end_gateway")) {
             return SurfaceMode.OPAQUE;
         }
-        if (name.contains("eyes") || name.contains("emissive")) {
+        if (name.contains("eyes") || name.contains("emissive") || name.contains("glow")
+                || name.contains("radioactive") || name.contains("laser")) {
             return SurfaceMode.EMISSIVE;
         }
         if (name.contains("text")) {
             return SurfaceMode.CUTOUT;
         }
-        if (name.contains("translucent") || name.contains("crumbling") || name.contains("water")) {
+        if (name.contains("translucent") || name.contains("crumbling") || name.contains("water")
+                || name.contains("ghost") || name.contains("ghostly") || name.contains("tombstone")
+                || name.contains("ray") || name.contains("beam") || name.contains("membrane")
+                || name.contains("wing") || name.contains("hologram") || name.contains("halo")
+                || name.contains("energy") || name.contains("shadow") || name.contains("veil")
+                || name.contains("fade")) {
             return SurfaceMode.TRANSLUCENT;
         }
-        if (name.contains("solid")) {
+        if (name.contains("glass") || name.contains("stained_glass")) {
+            return SurfaceMode.GLASS;
+        }
+        if (name.contains("solid") || name.contains("opaque")) {
             return SurfaceMode.OPAQUE;
         }
         return SurfaceMode.CUTOUT;

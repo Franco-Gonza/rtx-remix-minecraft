@@ -131,4 +131,80 @@ public class EntityPipelineTest {
         assertTrue(extracted.isPresent(), "capturableTexture should resolve texture for entityCutout");
         assertEquals(cowTex, extracted.get());
     }
+
+    @Test
+    void testTopologySupportForTrianglesAndFans() {
+        net.minecraft.resources.ResourceLocation dummyTex = new net.minecraft.resources.ResourceLocation("alexscaves", "textures/entity/laser.png");
+        DummyCustomRenderType triLayer = new DummyCustomRenderType("alexscaves:laser", dummyTex, com.mojang.blaze3d.vertex.VertexFormat.Mode.TRIANGLES);
+        DummyCustomRenderType fanLayer = new DummyCustomRenderType("citadel:beam_fan", dummyTex, com.mojang.blaze3d.vertex.VertexFormat.Mode.TRIANGLE_FAN);
+        DummyCustomRenderType stripLayer = new DummyCustomRenderType("citadel:beam_strip", dummyTex, com.mojang.blaze3d.vertex.VertexFormat.Mode.TRIANGLE_STRIP);
+        DummyCustomRenderType quadLayer = new DummyCustomRenderType("minecraft:quads", dummyTex, com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS);
+
+        assertEquals(com.nvidia.rtxremix.forge.entity.RenderLayerUtils.Topology.TRIANGLES,
+                com.nvidia.rtxremix.forge.entity.RenderLayerUtils.topology(triLayer).orElse(null));
+        assertEquals(com.nvidia.rtxremix.forge.entity.RenderLayerUtils.Topology.TRIANGLE_FAN,
+                com.nvidia.rtxremix.forge.entity.RenderLayerUtils.topology(fanLayer).orElse(null));
+        assertEquals(com.nvidia.rtxremix.forge.entity.RenderLayerUtils.Topology.TRIANGLE_STRIP,
+                com.nvidia.rtxremix.forge.entity.RenderLayerUtils.topology(stripLayer).orElse(null));
+        assertEquals(com.nvidia.rtxremix.forge.entity.RenderLayerUtils.Topology.QUADS,
+                com.nvidia.rtxremix.forge.entity.RenderLayerUtils.topology(quadLayer).orElse(null));
+    }
+
+    @Test
+    void testCapturingConsumerDynamicResizeBeyond16384() {
+        com.nvidia.rtxremix.forge.entity.RemixCapturingConsumer consumer =
+                new com.nvidia.rtxremix.forge.entity.RemixCapturingConsumer();
+        consumer.reset(new net.minecraft.resources.ResourceLocation("bookofdragons", "dragon_mesh"), "cutout");
+
+        int targetVertices = 20000;
+        for (int i = 0; i < targetVertices; i++) {
+            consumer.vertex(i, i * 0.5, i * 0.25);
+            consumer.color(255, 255, 255, 255);
+            consumer.uv(0.1f, 0.2f);
+            consumer.normal(0.0f, 1.0f, 0.0f);
+            consumer.endVertex();
+        }
+
+        assertEquals(targetVertices, consumer.getVertexCount(), "Consumer must not drop vertices beyond 16384 initial capacity");
+        assertEquals(19999.0f, consumer.getPositionsX()[19999], 1.0E-4f);
+        assertEquals(19999.0 * 0.5f, consumer.getPositionsY()[19999], 1.0E-4f);
+    }
+
+    @Test
+    void testSurfaceModeClassificationForModdedLayers() {
+        net.minecraft.resources.ResourceLocation dummyTex = new net.minecraft.resources.ResourceLocation("test", "tex");
+        DummyCustomRenderType tombstoneGhost = new DummyCustomRenderType("tombstone:ghostly_shape", dummyTex, com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS);
+        DummyCustomRenderType alexsMobsRay = new DummyCustomRenderType("alexsmobs:ghost_ray", dummyTex, com.mojang.blaze3d.vertex.VertexFormat.Mode.TRIANGLE_STRIP);
+        DummyCustomRenderType dragonWing = new DummyCustomRenderType("bookofdragons:wing_membrane", dummyTex, com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS);
+        DummyCustomRenderType radioactiveGlow = new DummyCustomRenderType("alexscaves:radioactive_glow", dummyTex, com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS);
+
+        assertEquals(com.nvidia.rtxremix.forge.entity.RenderLayerUtils.SurfaceMode.TRANSLUCENT,
+                com.nvidia.rtxremix.forge.entity.RenderLayerUtils.surfaceMode(tombstoneGhost));
+        assertEquals(com.nvidia.rtxremix.forge.entity.RenderLayerUtils.SurfaceMode.TRANSLUCENT,
+                com.nvidia.rtxremix.forge.entity.RenderLayerUtils.surfaceMode(alexsMobsRay));
+        assertEquals(com.nvidia.rtxremix.forge.entity.RenderLayerUtils.SurfaceMode.TRANSLUCENT,
+                com.nvidia.rtxremix.forge.entity.RenderLayerUtils.surfaceMode(dragonWing));
+        assertEquals(com.nvidia.rtxremix.forge.entity.RenderLayerUtils.SurfaceMode.EMISSIVE,
+                com.nvidia.rtxremix.forge.entity.RenderLayerUtils.surfaceMode(radioactiveGlow));
+    }
+
+    @Test
+    void testCustomRenderTypeTextureReflection() {
+        net.minecraft.resources.ResourceLocation expectedLoc = new net.minecraft.resources.ResourceLocation("alexscaves", "textures/entity/ray.png");
+        DummyCustomRenderType customLayer = new DummyCustomRenderType("alexscaves:ray_custom", expectedLoc, com.mojang.blaze3d.vertex.VertexFormat.Mode.TRIANGLES);
+
+        java.util.Optional<net.minecraft.resources.ResourceLocation> resolved =
+                com.nvidia.rtxremix.forge.entity.RenderLayerUtils.capturableTexture(customLayer);
+        assertTrue(resolved.isPresent(), "Direct reflection should resolve custom texture field");
+        assertEquals(expectedLoc, resolved.get());
+    }
+
+    static class DummyCustomRenderType extends net.minecraft.client.renderer.RenderType {
+        private final net.minecraft.resources.ResourceLocation customTexture;
+
+        DummyCustomRenderType(String name, net.minecraft.resources.ResourceLocation tex, com.mojang.blaze3d.vertex.VertexFormat.Mode mode) {
+            super(name, com.mojang.blaze3d.vertex.DefaultVertexFormat.POSITION_COLOR_TEX, mode, 256, false, false, () -> {}, () -> {});
+            this.customTexture = tex;
+        }
+    }
 }

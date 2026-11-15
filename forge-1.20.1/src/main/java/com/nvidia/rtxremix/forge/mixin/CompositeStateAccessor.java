@@ -13,4 +13,7 @@ import org.spongepowered.asm.mixin.gen.Accessor;
 public interface CompositeStateAccessor {
     @Accessor("textureState")
     RenderStateShard.EmptyTextureStateShard rtxremix$getTextureState();
+
+    @Accessor("transparencyState")
+    RenderStateShard.TransparencyStateShard rtxremix$getTransparencyState();
 }

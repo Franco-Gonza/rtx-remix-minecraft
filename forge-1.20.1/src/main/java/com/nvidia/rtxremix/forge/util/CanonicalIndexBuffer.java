@@ -25,7 +25,16 @@ public final class CanonicalIndexBuffer {
         ensureCapacity(INITIAL_QUADS);
     }
 
+    public static final CanonicalIndexBuffer INSTANCE = new CanonicalIndexBuffer();
+
     private CanonicalIndexBuffer() {}
+
+    /**
+     * Instance accessor for the canonical index buffer.
+     */
+    public ByteBuffer get(int indexCount) {
+        return getBuffer(indexCount);
+    }
 
     /**
      * Ensures the shared buffer has at least {@code requiredQuads} indexed.

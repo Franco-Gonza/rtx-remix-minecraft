@@ -16,7 +16,8 @@ import org.joml.Matrix4f;
  */
 public class RemixCapturingConsumer implements VertexConsumer {
 
-    public static final int MAX_VERTICES = 16384;
+    public static final int INITIAL_CAPACITY = 16384;
+    public static final int MAX_VERTICES = INITIAL_CAPACITY;
 
     private ResourceLocation textureId;
     private String renderLayerName = "solid";
@@ -24,17 +25,18 @@ public class RemixCapturingConsumer implements VertexConsumer {
     private boolean transientGeometry = false;
     private int layerIndex = 0;
 
+    private int capacity = INITIAL_CAPACITY;
     private int vertexCount = 0;
-    private final float[] px = new float[MAX_VERTICES];
-    private final float[] py = new float[MAX_VERTICES];
-    private final float[] pz = new float[MAX_VERTICES];
-    private final float[] nx = new float[MAX_VERTICES];
-    private final float[] ny = new float[MAX_VERTICES];
-    private final float[] nz = new float[MAX_VERTICES];
-    private final float[] tu = new float[MAX_VERTICES];
-    private final float[] tv = new float[MAX_VERTICES];
-    private final int[] colors = new int[MAX_VERTICES];
-    private final int[] boneIndices = new int[MAX_VERTICES];
+    private float[] px = new float[capacity];
+    private float[] py = new float[capacity];
+    private float[] pz = new float[capacity];
+    private float[] nx = new float[capacity];
+    private float[] ny = new float[capacity];
+    private float[] nz = new float[capacity];
+    private float[] tu = new float[capacity];
+    private float[] tv = new float[capacity];
+    private int[] colors = new int[capacity];
+    private int[] boneIndices = new int[capacity];
 
     // Current vertex staging
     private float curX, curY, curZ;
@@ -206,11 +208,25 @@ public class RemixCapturingConsumer implements VertexConsumer {
         return this;
     }
 
+    private void ensureCapacity(int minCapacity) {
+        int newCap = Math.max(minCapacity, capacity * 2);
+        px = java.util.Arrays.copyOf(px, newCap);
+        py = java.util.Arrays.copyOf(py, newCap);
+        pz = java.util.Arrays.copyOf(pz, newCap);
+        nx = java.util.Arrays.copyOf(nx, newCap);
+        ny = java.util.Arrays.copyOf(ny, newCap);
+        nz = java.util.Arrays.copyOf(nz, newCap);
+        tu = java.util.Arrays.copyOf(tu, newCap);
+        tv = java.util.Arrays.copyOf(tv, newCap);
+        colors = java.util.Arrays.copyOf(colors, newCap);
+        boneIndices = java.util.Arrays.copyOf(boneIndices, newCap);
+        capacity = newCap;
+    }
+
     @Override
     public void endVertex() {
-        if (vertexCount >= MAX_VERTICES) {
-            vertexOpen = false;
-            return;
+        if (vertexCount >= capacity) {
+            ensureCapacity(capacity + 1024);
         }
 
         int i = vertexCount++;

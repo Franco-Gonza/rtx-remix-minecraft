@@ -17,6 +17,7 @@ import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -32,6 +33,7 @@ public class RemixEntityPass {
 
     private final RemixVertexConsumerProvider provider = new RemixVertexConsumerProvider();
     private final Set<Integer> capturedEntityIds = new HashSet<>(MAX_ENTITIES_PER_FRAME);
+    private final List<Entity> sweepCandidates = new ArrayList<>(MAX_ENTITIES_PER_FRAME);
 
     private boolean frameActive = false;
     private float[] reusableBoneData = new float[0];
@@ -40,12 +42,14 @@ public class RemixEntityPass {
         if (frameActive) return;
         frameActive = true;
         capturedEntityIds.clear();
+        sweepCandidates.clear();
         submitter.beginFrame();
     }
 
     public void resetFrame() {
         frameActive = false;
         capturedEntityIds.clear();
+        sweepCandidates.clear();
     }
 
     public boolean captureAndSubmit(Entity entity, EntityRenderDispatcher dispatcher,
@@ -119,15 +123,24 @@ public class RemixEntityPass {
 
         if (level != null && camera != null && capturedEntityIds.size() < MAX_ENTITIES_PER_FRAME) {
             Vec3 camPos = camera.getPosition();
+            sweepCandidates.clear();
             for (Entity entity : level.entitiesForRendering()) {
-                if (capturedEntityIds.size() >= MAX_ENTITIES_PER_FRAME) {
-                    break;
-                }
                 if (!capturedEntityIds.contains(entity.getId())) {
                     if (entity.distanceToSqr(camPos) <= MAX_SWEEP_DISTANCE_SQ) {
-                        captureAndSubmit(entity, dispatcher, tickDelta, submitter);
+                        sweepCandidates.add(entity);
                     }
                 }
+            }
+
+            if (!sweepCandidates.isEmpty()) {
+                sweepCandidates.sort((e1, e2) -> Double.compare(e1.distanceToSqr(camPos), e2.distanceToSqr(camPos)));
+                for (int i = 0; i < sweepCandidates.size(); i++) {
+                    if (capturedEntityIds.size() >= MAX_ENTITIES_PER_FRAME) {
+                        break;
+                    }
+                    captureAndSubmit(sweepCandidates.get(i), dispatcher, tickDelta, submitter);
+                }
+                sweepCandidates.clear();
             }
         }
 
