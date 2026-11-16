@@ -41,6 +41,7 @@ dist/
 # Builds before the runtime textures' junction moved under remix-runtime/
 # linked it here; the build removes a leftover one. Keep the path ignored.
 packaging/textures/
+textures/
 
 ignore/
 

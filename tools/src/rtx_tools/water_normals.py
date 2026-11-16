@@ -42,7 +42,7 @@ DXGI_FORMAT_BC5_UNORM = 83
 class WaterParams:
     # Of the seeds tried, 225's longest waves share the slope most like the water this replaced.
     seed: int = 225
-    frame_size: int = 1024
+    frame_size: int = 512
     cols: int = SHEET_COLS
     rows: int = SHEET_ROWS
     fps: int = SHEET_FPS

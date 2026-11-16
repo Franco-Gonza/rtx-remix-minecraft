@@ -45,9 +45,37 @@ public class RemixEntitySubmitter {
     private final List<Long> transientMeshes = new ArrayList<>();
 
     private long defaultWhiteTexture = 0;
+    private long defaultWhiteMaterial = 0;
     private int drawCount = 0;
     private int meshCreateCount = 0;
     private long frameIndex = 0;
+
+    private static java.lang.reflect.Field httpTextureFileField = null;
+    private static boolean httpTextureFileFieldFailed = false;
+
+    private static java.io.File getHttpTextureFile(net.minecraft.client.renderer.texture.AbstractTexture tex) {
+        if (tex != null && "net.minecraft.client.renderer.texture.HttpTexture".equals(tex.getClass().getName())) {
+            if (!httpTextureFileFieldFailed && httpTextureFileField == null) {
+                try {
+                    httpTextureFileField = tex.getClass().getDeclaredField("file");
+                    httpTextureFileField.setAccessible(true);
+                } catch (Exception e) {
+                    try {
+                        httpTextureFileField = tex.getClass().getDeclaredField("f_118000_");
+                        httpTextureFileField.setAccessible(true);
+                    } catch (Exception e2) {
+                        httpTextureFileFieldFailed = true;
+                    }
+                }
+            }
+            if (httpTextureFileField != null) {
+                try {
+                    return (java.io.File) httpTextureFileField.get(tex);
+                } catch (Exception ignored) {}
+            }
+        }
+        return null;
+    }
 
     private long solidBlendPNext = 0;
     private long cutoutBlendPNext = 0;
@@ -82,8 +110,20 @@ public class RemixEntitySubmitter {
                     .pixelData(buf)
                     .build();
             defaultWhiteTexture = api.createTextureFromMemory(info);
+
+            MaterialInfo whiteMatInfo = new MaterialInfo();
+            whiteMatInfo.albedoTexture = defaultWhiteTexture;
+            whiteMatInfo.hash = 0xCAFE_BABE_0000_0002L;
+            MaterialInfoOpaqueEXT opaque = MaterialInfoOpaqueEXT.builder()
+                    .albedoConstant(1.0f, 1.0f, 1.0f)
+                    .roughnessConstant(0.8f)
+                    .metallicConstant(0.0f)
+                    .useDrawCallAlphaState(false)
+                    .build();
+            whiteMatInfo.opaqueExt = opaque;
+            defaultWhiteMaterial = api.createMaterial(whiteMatInfo);
         } catch (Exception e) {
-            LOGGER.error("Failed to create default white texture for entity submitter", e);
+            LOGGER.error("Failed to create default white texture/material for entity submitter", e);
         } finally {
             MemoryUtil.memFree(buf);
         }
@@ -226,6 +266,7 @@ public class RemixEntitySubmitter {
             if (layer.textureId() != null) {
                 meshHash = meshHash * 31L + layer.textureId().hashCode();
             }
+            meshHash = meshHash * 31L + materialHandle;
             meshHash = meshHash * 31L + (layer.topology() != null ? layer.topology().ordinal() : 0);
             meshHash ^= geomHash;
             if (meshHash == 0) {
@@ -350,6 +391,12 @@ public class RemixEntitySubmitter {
         }
 
         long textureHandle = getOrCreateTexture(textureId);
+        if (textureHandle == defaultWhiteTexture && !RenderLayerUtils.UNTEXTURED_LAYER_ID.equals(textureId)) {
+            // Texture is not yet ready (e.g. async skin download in progress)
+            // Return shared default white material without caching in materialCache so skin binds immediately once ready
+            return defaultWhiteMaterial;
+        }
+
         MaterialInfo info = new MaterialInfo();
         info.albedoTexture = textureHandle;
         info.hash = Objects.hash(textureId, surfaceMode);
@@ -413,7 +460,7 @@ public class RemixEntitySubmitter {
             return matHandle;
         } catch (Exception e) {
             LOGGER.error("Failed to create material for {}", textureId, e);
-            return 0;
+            return defaultWhiteMaterial;
         }
     }
 
@@ -445,38 +492,47 @@ public class RemixEntitySubmitter {
                 if (tex instanceof net.minecraft.client.renderer.texture.DynamicTexture dt) {
                     image = dt.getPixels();
                     ownsImage = false;
-                } else if (tex != null && tex.getId() > 0) {
-                    // Extract GPU texture via OpenGL for TextureAtlas (chests, beds, shulkers, signs, banners), HttpTexture, etc.
-                    int prevTex = org.lwjgl.opengl.GL11.glGetInteger(org.lwjgl.opengl.GL11.GL_TEXTURE_BINDING_2D);
-                    org.lwjgl.opengl.GL11.glBindTexture(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, tex.getId());
-                    try {
-                        int w = org.lwjgl.opengl.GL11.glGetTexLevelParameteri(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, 0, org.lwjgl.opengl.GL11.GL_TEXTURE_WIDTH);
-                        int h = org.lwjgl.opengl.GL11.glGetTexLevelParameteri(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, 0, org.lwjgl.opengl.GL11.GL_TEXTURE_HEIGHT);
-                        if (w > 0 && h > 0) {
-                            ByteBuffer buf = MemoryUtil.memAlloc(w * h * 4);
-                            try {
-                                buf.clear();
-                                org.lwjgl.opengl.GL11.glGetTexImage(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, 0,
-                                        org.lwjgl.opengl.GL11.GL_RGBA, org.lwjgl.opengl.GL11.GL_UNSIGNED_BYTE, buf);
-                                buf.position(0);
-                                buf.limit(w * h * 4);
-                                long texHash = ((long) textureId.hashCode() << 32) ^ ((long) w * 31L + h) ^ 0x55AA55AA55AA55AAL;
-                                if (texHash == 0) texHash = 1L;
-                                TextureFromMemoryInfo texInfo = TextureFromMemoryInfo.builder()
-                                        .hash(texHash)
-                                        .size(w, h)
-                                        .format(TextureFormat.RGBA8_UNORM)
-                                        .pixelData(buf)
-                                        .build();
-                                long handle = api.createTextureFromMemory(texInfo);
-                                textureCache.put(textureId, handle);
-                                return handle;
-                            } finally {
-                                MemoryUtil.memFree(buf);
+                } else {
+                    java.io.File skinFile = getHttpTextureFile(tex);
+                    if (skinFile != null && skinFile.isFile() && skinFile.length() > 0) {
+                        try (InputStream is = new java.io.FileInputStream(skinFile)) {
+                            image = NativeImage.read(is);
+                            ownsImage = true;
+                        } catch (Exception ignored) {}
+                    }
+                    if (image == null && tex != null && tex.getId() > 0) {
+                        // Extract GPU texture via OpenGL for TextureAtlas (chests, beds, shulkers, signs, banners), HttpTexture, etc.
+                        int prevTex = org.lwjgl.opengl.GL11.glGetInteger(org.lwjgl.opengl.GL11.GL_TEXTURE_BINDING_2D);
+                        org.lwjgl.opengl.GL11.glBindTexture(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, tex.getId());
+                        try {
+                            int w = org.lwjgl.opengl.GL11.glGetTexLevelParameteri(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, 0, org.lwjgl.opengl.GL11.GL_TEXTURE_WIDTH);
+                            int h = org.lwjgl.opengl.GL11.glGetTexLevelParameteri(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, 0, org.lwjgl.opengl.GL11.GL_TEXTURE_HEIGHT);
+                            if (w > 0 && h > 0) {
+                                ByteBuffer buf = MemoryUtil.memAlloc(w * h * 4);
+                                try {
+                                    buf.clear();
+                                    org.lwjgl.opengl.GL11.glGetTexImage(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, 0,
+                                            org.lwjgl.opengl.GL11.GL_RGBA, org.lwjgl.opengl.GL11.GL_UNSIGNED_BYTE, buf);
+                                    buf.position(0);
+                                    buf.limit(w * h * 4);
+                                    long texHash = ((long) textureId.hashCode() << 32) ^ ((long) w * 31L + h) ^ 0x55AA55AA55AA55AAL;
+                                    if (texHash == 0) texHash = 1L;
+                                    TextureFromMemoryInfo texInfo = TextureFromMemoryInfo.builder()
+                                            .hash(texHash)
+                                            .size(w, h)
+                                            .format(TextureFormat.RGBA8_UNORM)
+                                            .pixelData(buf)
+                                            .build();
+                                    long handle = api.createTextureFromMemory(texInfo);
+                                    textureCache.put(textureId, handle);
+                                    return handle;
+                                } finally {
+                                    MemoryUtil.memFree(buf);
+                                }
                             }
+                        } finally {
+                            org.lwjgl.opengl.GL11.glBindTexture(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, prevTex);
                         }
-                    } finally {
-                        org.lwjgl.opengl.GL11.glBindTexture(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, prevTex);
                     }
                 }
             }
@@ -613,6 +669,13 @@ public class RemixEntitySubmitter {
             defaultWhiteTexture = 0;
         }
 
+        if (defaultWhiteMaterial != 0) {
+            try {
+                api.destroyMaterial(defaultWhiteMaterial);
+            } catch (Exception ignored) {}
+            defaultWhiteMaterial = 0;
+        }
+
         if (solidBlendPNext != 0) {
             RemixBridge.freeExt(solidBlendPNext);
             solidBlendPNext = 0;
@@ -624,6 +687,43 @@ public class RemixEntitySubmitter {
         if (translucentBlendPNext != 0) {
             RemixBridge.freeExt(translucentBlendPNext);
             translucentBlendPNext = 0;
+        }
+    }
+
+    public void invalidateSkinTexture(ResourceLocation textureId) {
+        if (textureId == null) return;
+        Long texHandle = textureCache.remove(textureId);
+        if (texHandle != null && texHandle != defaultWhiteTexture) {
+            try {
+                api.destroyTexture(texHandle);
+            } catch (Exception ignored) {}
+        }
+        materialCache.keySet().removeIf(k -> {
+            if (textureId.equals(k.textureId())) {
+                Long mat = materialCache.get(k);
+                if (mat != null && mat != 0 && mat != defaultWhiteMaterial) {
+                    try {
+                        api.destroyMaterial(mat);
+                    } catch (Exception ignored) {}
+                }
+                return true;
+            }
+            return false;
+        });
+    }
+
+    public void invalidateEntityMaterials(Object entity) {
+        if (entity == null) return;
+        List<EntityPartKey> parts = instancesByEntity.get(entity);
+        if (parts != null) {
+            for (EntityPartKey part : parts) {
+                Long mesh = instanceMeshes.remove(part);
+                if (mesh != null && mesh != 0) {
+                    try {
+                        api.destroyMesh(mesh);
+                    } catch (Exception ignored) {}
+                }
+            }
         }
     }
 

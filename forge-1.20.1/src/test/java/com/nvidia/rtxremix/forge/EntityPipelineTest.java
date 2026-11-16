@@ -249,6 +249,19 @@ public class EntityPipelineTest {
         pass.resetFrame();
     }
 
+    @Test
+    void testForgeNativeExtractorStagingBufferMerge(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir) throws java.io.IOException {
+        java.nio.file.Path testConf = tempDir.resolve("test_rtx.conf");
+        java.nio.file.Files.writeString(testConf, "rtx.dlfg.enable = True" + System.lineSeparator());
+
+        com.nvidia.rtxremix.forge.runtime.ForgeNativeExtractor.mergeCriticalConfigKeys(testConf);
+
+        String updated = java.nio.file.Files.readString(testConf);
+        assertTrue(updated.contains("rtx.textureManager.stagingBufferSizeMiB = 256"), "Should merge staging buffer size");
+        assertTrue(updated.contains("dxvk.otherMemoryChunkSizeMB = 256"), "Should merge dxvk other memory chunk size");
+        assertTrue(updated.contains("rtx.reflex.mode = 2"), "Should merge reflex mode");
+    }
+
     static class DummyCustomRenderType extends net.minecraft.client.renderer.RenderType {
         private final net.minecraft.resources.ResourceLocation customTexture;
 

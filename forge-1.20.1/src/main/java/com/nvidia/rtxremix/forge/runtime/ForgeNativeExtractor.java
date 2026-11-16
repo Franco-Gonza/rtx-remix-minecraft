@@ -123,6 +123,22 @@ public final class ForgeNativeExtractor {
                        .append(System.lineSeparator());
                 modified = true;
             }
+            if (!content.contains("rtx.textureManager.stagingBufferSizeMiB")) {
+                updated.append(System.lineSeparator())
+                       .append("# VRAM staging buffer size for large texture uploads (such as water normals flipbook)")
+                       .append(System.lineSeparator())
+                       .append("rtx.textureManager.stagingBufferSizeMiB = 256")
+                       .append(System.lineSeparator());
+                modified = true;
+            }
+            if (!content.contains("dxvk.otherMemoryChunkSizeMB")) {
+                updated.append(System.lineSeparator())
+                       .append("# Chunk allocation size for Vulkan staging memory heaps")
+                       .append(System.lineSeparator())
+                       .append("dxvk.otherMemoryChunkSizeMB = 256")
+                       .append(System.lineSeparator());
+                modified = true;
+            }
 
             if (modified) {
                 Files.writeString(rtxConf, updated.toString());

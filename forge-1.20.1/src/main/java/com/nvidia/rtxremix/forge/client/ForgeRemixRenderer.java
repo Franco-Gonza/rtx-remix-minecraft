@@ -12,6 +12,7 @@ import com.nvidia.rtxremix.forge.terrain.capture.SectionMeshData;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.SectionPos;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFWNativeWin32;
@@ -941,6 +942,16 @@ public final class ForgeRemixRenderer {
             return false;
         }
         return blockEntityPass.capture(be, client.getBlockEntityRenderDispatcher(), tickDelta, entitySubmitter);
+    }
+
+    public void invalidateSkinTexture(ResourceLocation textureId) {
+        if (entitySubmitter != null) {
+            entitySubmitter.invalidateSkinTexture(textureId);
+        }
+    }
+
+    public com.nvidia.rtxremix.forge.entity.RemixEntitySubmitter getEntitySubmitter() {
+        return entitySubmitter;
     }
 
     public void submitScene() {
