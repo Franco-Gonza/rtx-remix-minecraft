@@ -316,7 +316,27 @@ Para certificar de forma definitiva los puntos marcados como **NO VERIFICADO**, 
 * **Preservación Forense 100% de Crash Dumps y Sentry:**
   * En [ForgeNativeExtractor.java](file:///D:/Proyectos/RTX%20MC%201.20.1/forge-1.20.1/src/main/java/com/nvidia/rtxremix/forge/runtime/ForgeNativeExtractor.java), se eliminó la eliminación recursiva de `rtx-remix/logs/.sentry-native`.
   * Se desactivó cualquier purga automática de bases de datos de fallos, minidumps (`.nv-gpudmp`, crashpad) o archivos de log, garantizando la preservación completa del historial de diagnósticos para análisis post-mortem.
-* **Artefacto Desplegado:**
+* **Artefacto Desplegado (Bundle con Runtime Completo):**
   * Archivo: `C:\Users\franc\AppData\Roaming\.minecraft\mods\rtx-remix-forge-1.20.1-0.1.0.jar`
-  * Tamaño: **342.636 bytes** | SHA-256: `E91D5437902C1E04097E3058715CC7BBBF0AA0485D3E557423F838B08275F71E`
+  * Tamaño: **621.348.055 bytes** | SHA-256: `088F4B17B2785A148FAEC1B84E4E51FA7F30A1B701CC8B536ED92458461092C6`
 * **Validación Automatizada:** **52/52 tests pasando (100%)** en `gradlew test --rerun-tasks`.
+
+---
+
+## 16. Cierre de Release, Corrección de Alas y Continuidad de Shading de Terreno
+
+* **Alas Book of Dragons (Winding Diagonal y Normales Invertidas):**
+  * En `DragonWingMembraneHelper.java` y `DragonWingMembraneTest.java`, se corrigió el orden de vértices del quad trasero a alineación diagonal `(v0, v3, v2, v1)` con offset `EPSILON_OFFSET` a lo largo de la normal opuesta.
+  * Combinado con la indexación canónica en `RemixEntitySubmitter.java`, ambas caras comparten la misma partición diagonal `(v0, v2)`, eliminando tijeras cruzadas, distorsión elástica y z-fighting.
+* **Continuidad de Shading en Césped y Terreno:**
+  * En [BlockQuadEmitter.java](file:///D:/Proyectos/RTX%20MC%201.20.1/forge-1.20.1/src/main/java/com/nvidia/rtxremix/forge/terrain/capture/BlockQuadEmitter.java), `GrassBlock` se clasifica explícitamente como `solid`, evitando que la consulta a `ItemBlockRenderTypes` lo degrade a `cutout_mipped`.
+  * Esto previene discontinuidades de sombreado, elimina la invocación de shaders any-hit sobre la superficie del terreno y maximiza el rendimiento del BVH.
+* **Agua 1024px con Staging 512MB:**
+  * Configuración de `rtx.textureManager.stagingBufferSizeMiB = 512` y `dxvk.otherMemoryChunkSizeMB = 512` en `packaging/rtx.conf` y sincronización en runtime con auto-merge en [ForgeNativeExtractor.java](file:///D:/Proyectos/RTX%20MC%201.20.1/forge-1.20.1/src/main/java/com/nvidia/rtxremix/forge/runtime/ForgeNativeExtractor.java).
+  * Soporta el flipbook de agua a resolución nativa de 1024px (167.77 MB BC5) sin desbordamientos de staging buffer ni pausas de renderizado.
+* **Estabilidad GPU DLFG Async:**
+  * `rtx.dlfg.presentOnGraphicsQueue = False` garantizado para desacoplar Frame Generation de la cola gráfica principal, eliminando el error `VK_ERROR_DEVICE_LOST` (`0x60D0DEAD`).
+* **Estado de Distribución Oficial:**
+  * Bundle generado mediante `packageDistJar`: `forge-1.20.1/build/distributions/rtx-remix-forge-1.20.1-0.1.0.jar`.
+  * Desplegado en: `C:\Users\franc\AppData\Roaming\.minecraft\mods\rtx-remix-forge-1.20.1-0.1.0.jar`.
+  * Tamaño: **621.348.055 bytes** | SHA-256: `088F4B17B2785A148FAEC1B84E4E51FA7F30A1B701CC8B536ED92458461092C6`.
