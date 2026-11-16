@@ -171,6 +171,7 @@ public final class DragonWingMembraneHelper {
          * Visually imperceptible, but strictly eliminates coplanar z-fighting in path tracing.
          */
         public static final float EPSILON_OFFSET = 1.0e-4f;
+        private static final int[] BACK_QUAD_INDICES = {0, 3, 2, 1};
 
         private final VertexConsumer delegate;
 
@@ -316,9 +317,12 @@ public final class DragonWingMembraneHelper {
             for (int i = 0; i < 4; i++) {
                 emitVertex(x[i], y[i], z[i], nx[i], ny[i], nz[i], i);
             }
-            // 2. Emit back quad with reversed winding: 3 -> 2 -> 1 -> 0, inverted normals,
-            // and a sub-millimeter epsilon offset along -normal to prevent ray-tracing z-fighting
-            for (int i = 3; i >= 0; i--) {
+            // 2. Emit back quad with diagonal-aligned reversed winding: 0 -> 3 -> 2 -> 1,
+            // inverted normals, and a sub-millimeter epsilon offset along -normal.
+            // When indexed canonically by (0, 2, 1, 0, 3, 2), both sheets split across diagonal (v0, v2),
+            // strictly eliminating crossing-diagonal penetration, geometry deformation, and z-fighting.
+            for (int idx = 0; idx < 4; idx++) {
+                int i = BACK_QUAD_INDICES[idx];
                 float ox = x[i] - nx[i] * EPSILON_OFFSET;
                 float oy = y[i] - ny[i] * EPSILON_OFFSET;
                 float oz = z[i] - nz[i] * EPSILON_OFFSET;

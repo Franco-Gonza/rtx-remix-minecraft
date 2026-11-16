@@ -51,15 +51,15 @@ public abstract class FaunaRendererMixin {
     }
 
     @Inject(
-            method = "renderRecursively",
+            method = "renderModel",
             at = @At("RETURN"),
             remap = false,
             require = 0
     )
     private void rtxremix$renderMembranesForRemix(
-            @Coerce Object ctx, @Coerce Object bone, boolean z, CallbackInfo ci) {
+            @Coerce Object ctx, boolean z, CallbackInfo ci) {
         EntityRenderContext rtxCtx = EntityRenderContext.get();
-        if (rtxCtx.isActive() && this.depth == 0) {
+        if (rtxCtx.isActive()) {
             DragonWingMembraneHelper.renderMembranes(ctx);
         }
     }

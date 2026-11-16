@@ -244,6 +244,30 @@ public class RemixCapturingConsumer implements VertexConsumer {
     }
 
     @Override
+    public void vertex(float x, float y, float z, float red, float green, float blue, float alpha,
+                       float u, float v, int overlay, int light, float normalX, float normalY, float normalZ) {
+        finishOpenVertex();
+        if (vertexCount >= capacity) {
+            ensureCapacity(capacity + 1024);
+        }
+        int i = vertexCount++;
+        px[i] = x;
+        py[i] = y;
+        pz[i] = z;
+        nx[i] = normalX;
+        ny[i] = normalY;
+        nz[i] = normalZ;
+        tu[i] = u;
+        tv[i] = v;
+        colors[i] = (((int)(alpha * 255.0f) & 0xFF) << 24)
+                | (((int)(red * 255.0f) & 0xFF) << 16)
+                | (((int)(green * 255.0f) & 0xFF) << 8)
+                | ((int)(blue * 255.0f) & 0xFF);
+        boneIndices[i] = curBoneIndex >= 0 ? curBoneIndex : EntityRenderContext.get().currentBoneIndex();
+        vertexOpen = false;
+    }
+
+    @Override
     public void defaultColor(int r, int g, int b, int a) {
         this.curColor = ((a & 0xFF) << 24) | ((r & 0xFF) << 16) | ((g & 0xFF) << 8) | (b & 0xFF);
     }

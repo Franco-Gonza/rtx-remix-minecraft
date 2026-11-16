@@ -75,30 +75,76 @@ class DragonWingMembraneTest {
         assertEquals(1.0f, pz[3], 1e-4f);
         assertEquals(1.0f, ny[3], 1e-4f);
 
-        // 2. Back quad with reversed winding: v3, v2, v1, v0
+        // 2. Back quad with diagonal-aligned reversed winding: v0, v3, v2, v1
         // Normal inverted to -1.0
         // Position shifted along -normal by EPSILON_OFFSET (1.0 - 1e-4 = 0.9999)
+        // With canonical indexing (0, 2, 1, 0, 3, 2), both sheets split across (v0, v2),
+        // preventing cross-diagonal scissoring, twisting deformation, and z-fighting.
         float expectedBackY = 1.0f - DragonWingMembraneHelper.DoubleSidedConsumer.EPSILON_OFFSET;
 
+        // b0 = v0 (0, 0)
         assertEquals(0.0f, px[4], 1e-4f);
         assertEquals(expectedBackY, py[4], 1e-4f);
-        assertEquals(1.0f, pz[4], 1e-4f);
+        assertEquals(0.0f, pz[4], 1e-4f);
         assertEquals(-1.0f, ny[4], 1e-4f);
 
-        assertEquals(1.0f, px[5], 1e-4f);
+        // b1 = v3 (0, 1)
+        assertEquals(0.0f, px[5], 1e-4f);
         assertEquals(expectedBackY, py[5], 1e-4f);
         assertEquals(1.0f, pz[5], 1e-4f);
         assertEquals(-1.0f, ny[5], 1e-4f);
 
+        // b2 = v2 (1, 1)
         assertEquals(1.0f, px[6], 1e-4f);
         assertEquals(expectedBackY, py[6], 1e-4f);
-        assertEquals(0.0f, pz[6], 1e-4f);
+        assertEquals(1.0f, pz[6], 1e-4f);
         assertEquals(-1.0f, ny[6], 1e-4f);
 
-        assertEquals(0.0f, px[7], 1e-4f);
+        // b3 = v1 (1, 0)
+        assertEquals(1.0f, px[7], 1e-4f);
         assertEquals(expectedBackY, py[7], 1e-4f);
         assertEquals(0.0f, pz[7], 1e-4f);
         assertEquals(-1.0f, ny[7], 1e-4f);
+    }
+
+    @Test
+    @DisplayName("Verify front and back membrane sheets share identical diagonal split preventing self-penetration")
+    void testDiagonalAlignmentMatchesBetweenSheets() {
+        RemixCapturingConsumer capturing = new RemixCapturingConsumer();
+        capturing.reset(new ResourceLocation("bookofdragons", "textures/entity/dragon/lightfury.png"), "cutout");
+
+        DragonWingMembraneHelper.DoubleSidedConsumer doubleSided =
+                new DragonWingMembraneHelper.DoubleSidedConsumer(capturing);
+
+        // Non-planar curved membrane quad: v2 is elevated by 0.5f along Y
+        doubleSided.vertex(0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0, 0, 0.0f, 1.0f, 0.0f);
+        doubleSided.vertex(2.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0, 0, 0.0f, 1.0f, 0.0f);
+        doubleSided.vertex(2.0f, 0.5f, 2.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0, 0, 0.0f, 1.0f, 0.0f);
+        doubleSided.vertex(0.0f, 0.0f, 2.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f, 0, 0, 0.0f, 1.0f, 0.0f);
+
+        assertEquals(8, capturing.getVertexCount());
+
+        float[] px = capturing.getPositionsX();
+        float[] py = capturing.getPositionsY();
+        float[] pz = capturing.getPositionsZ();
+
+        // Front quad: v0 (0), v1 (1), v2 (2), v3 (3)
+        // Canonical indices: (0, 2, 1) and (0, 3, 2). Shared diagonal: (0, 2).
+        // Back quad: b0 (4), b1 (5), b2 (6), b3 (7)
+        // Canonical indices: (4, 6, 5) and (4, 7, 6). Shared diagonal: (4, 6).
+        // For zero scissoring and zero crossing penetration:
+        // b0 must correspond to v0, and b2 must correspond to v2!
+        assertEquals(px[0], px[4], 1e-4f, "b0 must be positioned at v0");
+        assertEquals(pz[0], pz[4], 1e-4f, "b0 must be positioned at v0");
+
+        assertEquals(px[2], px[6], 1e-4f, "b2 must be positioned at v2");
+        assertEquals(pz[2], pz[6], 1e-4f, "b2 must be positioned at v2");
+
+        // The back diagonal (4 -> 6) is parallel to front diagonal (0 -> 2)
+        float frontDiagMidY = (py[0] + py[2]) * 0.5f;
+        float backDiagMidY = (py[4] + py[6]) * 0.5f;
+        assertEquals(DragonWingMembraneHelper.DoubleSidedConsumer.EPSILON_OFFSET,
+                frontDiagMidY - backDiagMidY, 1e-5f, "Sheets must remain strictly parallel along diagonal");
     }
 
     @Test

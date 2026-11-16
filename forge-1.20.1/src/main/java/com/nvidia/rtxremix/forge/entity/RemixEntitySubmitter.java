@@ -351,11 +351,11 @@ public class RemixEntitySubmitter {
             for (int q = 0; q < quads; q++) {
                 int base = q * 4;
                 indexBuffer.putInt(base);
+                indexBuffer.putInt(base + 2);
                 indexBuffer.putInt(base + 1);
-                indexBuffer.putInt(base + 2);
                 indexBuffer.putInt(base);
-                indexBuffer.putInt(base + 2);
                 indexBuffer.putInt(base + 3);
+                indexBuffer.putInt(base + 2);
             }
         } else if (topology == RenderLayerUtils.Topology.TRIANGLE_STRIP) {
             for (int i = 0; i < vertexCount - 2; i++) {
