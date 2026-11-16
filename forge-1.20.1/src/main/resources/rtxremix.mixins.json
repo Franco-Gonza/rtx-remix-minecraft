@@ -1,0 +1,39 @@
+{
+    "required": true,
+    "minVersion": "0.8",
+    "package": "com.nvidia.rtxremix.forge.mixin",
+    "compatibilityLevel": "JAVA_17",
+    "refmap": "rtxremix.refmap.json",
+    "mixins": [],
+    "client": [
+        "MinecraftMixin",
+        "RenderSystemMixin",
+        "GameRendererAccessor",
+        "CompositeRenderTypeAccessor",
+        "CompositeStateAccessor",
+        "TextureStateShardAccessor",
+        "EmptyTextureStateShardInvoker",
+        "GameRendererMixin",
+        "BlockEntityRenderDispatcherMixin",
+        "ReceivingLevelScreenMixin",
+        "ChunkRenderDispatcherRebuildTaskMixin",
+        "LevelRendererMixin",
+        "LevelRendererAccessor",
+        "EntityRenderDispatcherAccessor",
+        "NativeImageAccessor",
+        "SpriteAtlasTextureMixin",
+        "SpriteContentsUploadMixin",
+        "SimpleTextureAccessor",
+        "HttpTextureMixin",
+        "ParticleEngineAccessor",
+        "ParticleAccessor",
+        "SingleQuadParticleAccessor",
+        "TextureSheetParticleAccessor",
+        "compatibility.GeckoLibGeoRendererMixin",
+        "compatibility.CitadelAdvancedModelBoxMixin",
+        "compatibility.FaunaRendererMixin"
+    ],
+    "injectors": {
+        "defaultRequire": 1
+    }
+}
