@@ -20,8 +20,8 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
 ## 2. Resultados de la Suite de Regresiones Automatizadas
 
 * **Estado de Ejecución:** `BUILD SUCCESSFUL` (13/13 tareas ejecutadas, 100% pass rate).
-* **Total Tests Ejecutados:** 50
-* **Total Aprobados:** 50 (100% pass rate)
+* **Total Tests Ejecutados:** 52
+* **Total Aprobados:** 52 (100% pass rate)
 * **Fallos / Errores / Omitidos:** 0 / 0 / 0
 * **Reporte HTML:** [index.html](file:///D:/proyectos/RTX%20MC%201.20.1/forge-1.20.1/build/reports/tests/test/index.html)
 * **Reportes XML:** [test-results](file:///D:/proyectos/RTX%20MC%201.20.1/forge-1.20.1/build/test-results/test)
@@ -31,8 +31,8 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
 | `AtlasAnimationForwarderTest` | 14 | 14 | 0 | 0 | 0 | 1.341s |
 | `BlockTextureAuditTest` | 8 | 8 | 0 | 0 | 0 | 0.146s |
-| `DragonWingMembraneTest` | 3 | 3 | 0 | 0 | 0 | 0.018s |
-| `EntityPipelineTest` | 16 | 16 | 0 | 0 | 0 | 0.120s |
+| `DragonWingMembraneTest` | 4 | 4 | 0 | 0 | 0 | 0.018s |
+| `EntityPipelineTest` | 17 | 17 | 0 | 0 | 0 | 0.120s |
 | `LabPBRConverterTest` | 7 | 7 | 0 | 0 | 0 | 0.005s |
 | `CanonicalIndexBufferTest` | 2 | 2 | 0 | 0 | 0 | 0.012s |
 
@@ -300,4 +300,23 @@ Para certificar de forma definitiva los puntos marcados como **NO VERIFICADO**, 
     1. Lectura directa del archivo en disco desde `HttpTexture.file` una vez descargado.
     2. Inclusión del `materialHandle` en el cálculo de `meshHash` para detectar cambios de material inmediatamente.
     3. Invalidación dinámica de caché en `RemixEntitySubmitter` y `ForgeRemixRenderer` cuando la textura cambia de placeholder a la skin definitiva.
-* **Validación:** 16/16 tests pasando en `EntityPipelineTest` incluyendo `testDynamicSkinMaterialCacheInvalidation`. Total general: **50/50 tests pasando**.
+* **Validación:** 17/17 tests pasando en `EntityPipelineTest` incluyendo `testDynamicSkinMaterialCacheInvalidation`. Total general: **51/51 tests pasando**.
+
+---
+
+## 15. Verificación de Invocación Asíncrona de Skins y Preservación de Diagnósticos/Sentry
+
+* **Invocación Dinámica de Skins en Mojang:**
+  * Se implementó [SimpleTextureAccessor.java](file:///D:/Proyectos/RTX%20MC%201.20.1/forge-1.20.1/src/main/java/com/nvidia/rtxremix/forge/mixin/SimpleTextureAccessor.java) para exponer el `ResourceLocation location` protegido de `SimpleTexture`.
+  * Se implementó [HttpTextureMixin.java](file:///D:/Proyectos/RTX%20MC%201.20.1/forge-1.20.1/src/main/java/com/nvidia/rtxremix/forge/mixin/HttpTextureMixin.java) inyectando en `upload(NativeImage)` (`@At("RETURN")`), garantizando que la invalidación dinámica `invalidateSkinTexture(location)` se invoque inmediatamente al completar la descarga asíncrona y subida a GPU de cualquier skin de jugador.
+* **Ciclo de Vida y Destrucción de Materiales en Remix (`api.destroyMaterial`):**
+  * En [RemixEntitySubmitter.java](file:///D:/Proyectos/RTX%20MC%201.20.1/forge-1.20.1/src/main/java/com/nvidia/rtxremix/forge/entity/RemixEntitySubmitter.java), la invalidación purga las entradas de `textureCache` y `materialCache` mediante iteradores seguros.
+  * Todo handle de material nativo previo (`mat != defaultWhiteMaterial`) es destruido inmediatamente con `api.destroyMaterial(mat)`, y toda textura previa con `api.destroyTexture(texHandle)`.
+  * Los recursos globales singleton `defaultWhiteMaterial` y `defaultWhiteTexture` quedan rigurosamente protegidos contra destrucción inadvertida durante la invalidación de skins.
+* **Preservación Forense 100% de Crash Dumps y Sentry:**
+  * En [ForgeNativeExtractor.java](file:///D:/Proyectos/RTX%20MC%201.20.1/forge-1.20.1/src/main/java/com/nvidia/rtxremix/forge/runtime/ForgeNativeExtractor.java), se eliminó la eliminación recursiva de `rtx-remix/logs/.sentry-native`.
+  * Se desactivó cualquier purga automática de bases de datos de fallos, minidumps (`.nv-gpudmp`, crashpad) o archivos de log, garantizando la preservación completa del historial de diagnósticos para análisis post-mortem.
+* **Artefacto Desplegado:**
+  * Archivo: `C:\Users\franc\AppData\Roaming\.minecraft\mods\rtx-remix-forge-1.20.1-0.1.0.jar`
+  * Tamaño: **342.636 bytes** | SHA-256: `E91D5437902C1E04097E3058715CC7BBBF0AA0485D3E557423F838B08275F71E`
+* **Validación Automatizada:** **52/52 tests pasando (100%)** en `gradlew test --rerun-tasks`.
