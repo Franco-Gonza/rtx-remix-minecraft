@@ -66,6 +66,10 @@ public class BlockTextureAuditTest {
         assertEquals("cutout", BlockQuadEmitter.classifyBlockLayer(Blocks.GRASS.defaultBlockState()));
         assertEquals("cutout", BlockQuadEmitter.classifyBlockLayer(Blocks.CACTUS.defaultBlockState()));
 
+        // Solid terrain blocks
+        assertEquals("solid", BlockQuadEmitter.classifyBlockLayer(Blocks.DIRT.defaultBlockState()));
+        assertEquals("solid", BlockQuadEmitter.classifyBlockLayer(Blocks.STONE.defaultBlockState()));
+
         // Glass
         assertEquals("glass", BlockQuadEmitter.classifyBlockLayer(Blocks.GLASS.defaultBlockState()));
         assertEquals("glass", BlockQuadEmitter.classifyBlockLayer(Blocks.GLASS_PANE.defaultBlockState()));

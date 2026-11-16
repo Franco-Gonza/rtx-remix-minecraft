@@ -40,7 +40,7 @@ public final class ForgeNativeExtractor {
             return;
         }
 
-        // Always sanitize stale crash telemetry and ensure modal dialog suppression
+        // Ensure critical configuration options; crash dumps, logs and Sentry databases are preserved for forensics
         cleanStaleSentryFiles(gameDir);
         ensureConfOptions(gameDir);
 
@@ -59,15 +59,7 @@ public final class ForgeNativeExtractor {
     }
 
     public static void cleanStaleSentryFiles(Path gameDir) {
-        try {
-            Path sentryDir = gameDir.resolve("rtx-remix").resolve("logs").resolve(".sentry-native");
-            if (Files.exists(sentryDir)) {
-                deleteRecursively(sentryDir);
-                LOGGER.info("Purged stale Sentry crash telemetry database: {}", sentryDir);
-            }
-        } catch (Throwable t) {
-            LOGGER.debug("Could not clean stale sentry files: {}", t.getMessage());
-        }
+        // Preserved for forensic crash analysis: crash dumps, minidumps, and Sentry telemetry are never purged.
     }
 
     public static void mergeCriticalConfigKeys(Path rtxConf) {
@@ -123,19 +115,39 @@ public final class ForgeNativeExtractor {
                        .append(System.lineSeparator());
                 modified = true;
             }
-            if (!content.contains("rtx.textureManager.stagingBufferSizeMiB")) {
+            // Ensure stagingBufferSizeMiB is at least 512 MiB to safely host the 1024px water flipbook (167.77 MB) + PBR textures
+            java.util.regex.Matcher stagingMatcher = java.util.regex.Pattern.compile("(?i)rtx\\.texturemanager\\.stagingBufferSizeMiB\\s*=\\s*(\\d+)").matcher(content);
+            if (stagingMatcher.find()) {
+                int currentVal = Integer.parseInt(stagingMatcher.group(1));
+                if (currentVal < 512) {
+                    content = content.replaceAll("(?i)rtx\\.texturemanager\\.stagingBufferSizeMiB\\s*=\\s*\\d+", "rtx.textureManager.stagingBufferSizeMiB = 512");
+                    updated = new StringBuilder(content);
+                    modified = true;
+                }
+            } else {
                 updated.append(System.lineSeparator())
                        .append("# VRAM staging buffer size for large texture uploads (such as water normals flipbook)")
                        .append(System.lineSeparator())
-                       .append("rtx.textureManager.stagingBufferSizeMiB = 256")
+                       .append("rtx.textureManager.stagingBufferSizeMiB = 512")
                        .append(System.lineSeparator());
+                content = updated.toString();
                 modified = true;
             }
-            if (!content.contains("dxvk.otherMemoryChunkSizeMB")) {
+
+            // Ensure dxvk.otherMemoryChunkSizeMB is at least 512 MB to allocate host-visible memory in chunks adequate for 167MB uploads
+            java.util.regex.Matcher chunkMatcher = java.util.regex.Pattern.compile("(?i)dxvk\\.otherMemoryChunkSizeMB\\s*=\\s*(\\d+)").matcher(content);
+            if (chunkMatcher.find()) {
+                int currentVal = Integer.parseInt(chunkMatcher.group(1));
+                if (currentVal < 512) {
+                    content = content.replaceAll("(?i)dxvk\\.otherMemoryChunkSizeMB\\s*=\\s*\\d+", "dxvk.otherMemoryChunkSizeMB = 512");
+                    updated = new StringBuilder(content);
+                    modified = true;
+                }
+            } else {
                 updated.append(System.lineSeparator())
                        .append("# Chunk allocation size for Vulkan staging memory heaps")
                        .append(System.lineSeparator())
-                       .append("dxvk.otherMemoryChunkSizeMB = 256")
+                       .append("dxvk.otherMemoryChunkSizeMB = 512")
                        .append(System.lineSeparator());
                 modified = true;
             }
@@ -151,16 +163,28 @@ public final class ForgeNativeExtractor {
 
     public static void ensureConfOptions(Path gameDir) {
         mergeCriticalConfigKeys(gameDir.resolve("rtx.conf"));
+        Path gameUserConf = gameDir.resolve("user.conf");
+        if (Files.exists(gameUserConf)) {
+            mergeCriticalConfigKeys(gameUserConf);
+        }
 
-        // Propagate to workspace run/rtx.conf if present
+        // Propagate to workspace run/rtx.conf and run/user.conf if present
         Path workspaceRunConf = gameDir.resolve("run").resolve("rtx.conf");
         if (Files.exists(workspaceRunConf)) {
             mergeCriticalConfigKeys(workspaceRunConf);
+        }
+        Path workspaceRunUserConf = gameDir.resolve("run").resolve("user.conf");
+        if (Files.exists(workspaceRunUserConf)) {
+            mergeCriticalConfigKeys(workspaceRunUserConf);
         }
         if (gameDir.getParent() != null) {
             Path parentRunConf = gameDir.getParent().resolve("run").resolve("rtx.conf");
             if (Files.exists(parentRunConf)) {
                 mergeCriticalConfigKeys(parentRunConf);
+            }
+            Path parentRunUserConf = gameDir.getParent().resolve("run").resolve("user.conf");
+            if (Files.exists(parentRunUserConf)) {
+                mergeCriticalConfigKeys(parentRunUserConf);
             }
         }
 

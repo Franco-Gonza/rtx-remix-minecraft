@@ -358,26 +358,27 @@ public final class BlockQuadEmitter {
             tempUvs[v * 2 + 1] = Float.intBitsToFloat(vd[off + 5]);
         }
 
-        int packedNormal = vd[7];
-        float nx = (byte) (packedNormal & 0xFF) / 127f;
-        float ny = (byte) ((packedNormal >> 8) & 0xFF) / 127f;
-        float nz = (byte) ((packedNormal >> 16) & 0xFF) / 127f;
-        if (nx * nx + ny * ny + nz * nz < 0.01f) {
-            Direction dir = bq.getDirection();
-            if (dir != null) {
-                nx = dir.getStepX();
-                ny = dir.getStepY();
-                nz = dir.getStepZ();
-            } else {
-                float d1x = tempPositions[6] - tempPositions[0];
-                float d1y = tempPositions[7] - tempPositions[1];
-                float d1z = tempPositions[8] - tempPositions[2];
-                float d2x = tempPositions[9] - tempPositions[3];
-                float d2y = tempPositions[10] - tempPositions[4];
-                float d2z = tempPositions[11] - tempPositions[5];
-                nx = d1y * d2z - d1z * d2y;
-                ny = d1z * d2x - d1x * d2z;
-                nz = d1x * d2y - d1y * d2x;
+        Direction dir = bq.getDirection();
+        float nx, ny, nz;
+        if (dir != null) {
+            nx = dir.getStepX();
+            ny = dir.getStepY();
+            nz = dir.getStepZ();
+        } else {
+            int packedNormal = vd[7];
+            nx = (byte) (packedNormal & 0xFF) / 127f;
+            ny = (byte) ((packedNormal >> 8) & 0xFF) / 127f;
+            nz = (byte) ((packedNormal >> 16) & 0xFF) / 127f;
+            if (nx * nx + ny * ny + nz * nz < 0.01f) {
+                float e1x = tempPositions[3] - tempPositions[0];
+                float e1y = tempPositions[4] - tempPositions[1];
+                float e1z = tempPositions[5] - tempPositions[2];
+                float e2x = tempPositions[6] - tempPositions[0];
+                float e2y = tempPositions[7] - tempPositions[1];
+                float e2z = tempPositions[8] - tempPositions[2];
+                nx = e1y * e2z - e1z * e2y;
+                ny = e1z * e2x - e1x * e2z;
+                nz = e1x * e2y - e1y * e2x;
                 float len = (float) Math.sqrt(nx * nx + ny * ny + nz * nz);
                 if (len > 0.001f) {
                     nx /= len;
@@ -412,30 +413,19 @@ public final class BlockQuadEmitter {
                 BlockTextureManager.SpriteEntry entry = texManager != null ? texManager.getSpriteById(spriteId) : null;
                 if (entry != null && entry.hasTransparency()) {
                     layerName = "cutout";
-                } else {
-                String sp = spriteId.getPath().toLowerCase();
-                if (sp.contains("leaves") || sp.contains("foliage") || sp.contains("needle") || sp.contains("canopy")) {
-                    layerName = "cutout_mipped";
-                } else if (sp.contains("bush") || sp.contains("shrub") || sp.contains("flower")
-                        || sp.contains("grass") || sp.contains("fern") || sp.contains("plant")
-                        || sp.contains("sapling") || sp.contains("roots") || sp.contains("sprouts")
-                        || sp.contains("vine") || sp.contains("petal") || sp.contains("branch")
-                        || sp.contains("twig") || sp.contains("flora") || sp.contains("cactus")
-                        || sp.contains("dead_bush") || sp.contains("deadbush") || sp.contains("poppy")
-                        || sp.contains("dandelion") || sp.contains("tulip") || sp.contains("rose")
-                        || sp.contains("orchid") || sp.contains("daisy") || sp.contains("allium")
-                        || sp.contains("peony") || sp.contains("lily") || sp.contains("fungus")
-                        || sp.contains("mushroom") || sp.contains("torch") || sp.contains("lantern")
-                        || sp.contains("chain") || sp.contains("bars") || sp.contains("rail")
-                        || sp.contains("ladder") || sp.contains("reed") || sp.contains("cane")
-                        || sp.contains("bamboo") || sp.contains("kelp") || sp.contains("seagrass")
-                        || sp.contains("crop") || sp.contains("wheat") || sp.contains("carrot")
-                        || sp.contains("potato") || sp.contains("beetroot") || sp.contains("berry")
-                        || sp.contains("weed") || sp.contains("clover") || sp.contains("wildflower")) {
-                    layerName = "cutout";
+                } else if (entry == null) {
+                    String sp = spriteId.getPath().toLowerCase();
+                    if (!sp.contains("grass_block") && !sp.contains("dirt") && !sp.contains("stone") && !sp.contains("soil")) {
+                        if (sp.contains("leaves") || sp.contains("foliage") || sp.contains("needle") || sp.contains("canopy")) {
+                            layerName = "cutout_mipped";
+                        } else if (sp.contains("bush") || sp.contains("shrub") || sp.contains("flower")
+                                || sp.contains("fern") || sp.contains("sapling") || sp.contains("dandelion")
+                                || sp.contains("poppy") || sp.contains("rose") || sp.contains("orchid")) {
+                            layerName = "cutout";
+                        }
+                    }
                 }
             }
-        }
         }
         float su0 = sprite != null ? sprite.getU0() : 0;
         float sv0 = sprite != null ? sprite.getV0() : 0;
@@ -907,6 +897,7 @@ public final class BlockQuadEmitter {
     public static String classifyBlockLayer(BlockState state) {
         if (state.is(Blocks.GLASS) || state.is(Blocks.GLASS_PANE)) return "glass";
         if (state.is(Blocks.LAVA)) return "lava";
+        if (state.is(Blocks.GRASS_BLOCK) || state.getBlock() instanceof net.minecraft.world.level.block.GrassBlock) return "solid";
 
         net.minecraft.world.level.block.Block b = state.getBlock();
         if (b instanceof LeavesBlock || state.is(BlockTags.LEAVES)) {
@@ -916,20 +907,6 @@ public final class BlockQuadEmitter {
                 || b instanceof net.minecraft.world.level.block.CactusBlock
                 || b instanceof net.minecraft.world.level.block.VineBlock
                 || b instanceof net.minecraft.world.level.block.SugarCaneBlock) {
-            return "cutout";
-        }
-
-        String blockClassName = b.getClass().getName().toLowerCase();
-        if (blockClassName.contains("leaves") || blockClassName.contains("foliage")
-                || blockClassName.contains("needle") || blockClassName.contains("canopy")) {
-            return "cutout_mipped";
-        }
-        if (blockClassName.contains("bush") || blockClassName.contains("shrub")
-                || blockClassName.contains("flower") || blockClassName.contains("grass")
-                || blockClassName.contains("plant") || blockClassName.contains("branch")
-                || blockClassName.contains("fern") || blockClassName.contains("sapling")
-                || blockClassName.contains("crop") || blockClassName.contains("vine")
-                || blockClassName.contains("flora") || blockClassName.contains("cactus")) {
             return "cutout";
         }
 
@@ -945,31 +922,36 @@ public final class BlockQuadEmitter {
             if (name.contains("cutout")) return "cutout";
             if (name.contains("translucent")) return "translucent";
         }
+
+        String blockClassName = b.getClass().getName().toLowerCase();
+        if (blockClassName.contains("leaves") || blockClassName.contains("foliage")
+                || blockClassName.contains("needle") || blockClassName.contains("canopy")) {
+            return "cutout_mipped";
+        }
+        if ((blockClassName.contains("bush") || blockClassName.contains("shrub")
+                || blockClassName.contains("flower") || blockClassName.contains("plant")
+                || blockClassName.contains("branch") || blockClassName.contains("fern")
+                || blockClassName.contains("sapling") || blockClassName.contains("crop")
+                || blockClassName.contains("flora") || blockClassName.contains("cactus"))
+                && !blockClassName.contains("grassblock") && !blockClassName.contains("grass_block")) {
+            return "cutout";
+        }
+
         return "solid";
     }
 
     private static String layerFromRenderType(RenderType rt, String fallback) {
         if (rt == null) return fallback;
-        if (RenderType.solid().equals(rt)) {
-            if ("cutout".equals(fallback) || "cutout_mipped".equals(fallback) || "glass".equals(fallback) || "translucent".equals(fallback)) {
-                return fallback;
-            }
-            return "solid";
-        }
+        if (RenderType.solid().equals(rt)) return "solid";
         if (RenderType.cutoutMipped().equals(rt)) return "cutout_mipped";
         if (RenderType.cutout().equals(rt)) return "cutout";
         if (RenderType.translucent().equals(rt)) return "translucent";
         if (RenderType.tripwire().equals(rt)) return "cutout";
         String name = rt.toString().toLowerCase();
+        if (name.contains("solid")) return "solid";
         if (name.contains("cutout_mipped") || name.contains("cutoutmipped")) return "cutout_mipped";
         if (name.contains("cutout")) return "cutout";
         if (name.contains("translucent")) return "translucent";
-        if (name.contains("solid")) {
-            if ("cutout".equals(fallback) || "cutout_mipped".equals(fallback) || "glass".equals(fallback) || "translucent".equals(fallback)) {
-                return fallback;
-            }
-            return "solid";
-        }
         return fallback;
     }
 

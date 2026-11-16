@@ -23,6 +23,8 @@
         "NativeImageAccessor",
         "SpriteAtlasTextureMixin",
         "SpriteContentsUploadMixin",
+        "SimpleTextureAccessor",
+        "HttpTextureMixin",
         "ParticleEngineAccessor",
         "ParticleAccessor",
         "SingleQuadParticleAccessor",

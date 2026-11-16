@@ -250,6 +250,75 @@ public class EntityPipelineTest {
     }
 
     @Test
+    void testDynamicSkinMaterialCacheInvalidation() throws Exception {
+        java.lang.reflect.Constructor<com.nvidia.rtxremix.RemixAPI> apiCtor =
+                com.nvidia.rtxremix.RemixAPI.class.getDeclaredConstructor();
+        apiCtor.setAccessible(true);
+        com.nvidia.rtxremix.RemixAPI api = apiCtor.newInstance();
+
+        com.nvidia.rtxremix.forge.entity.RemixEntitySubmitter submitter =
+                new com.nvidia.rtxremix.forge.entity.RemixEntitySubmitter(api);
+
+        net.minecraft.resources.ResourceLocation skinLoc =
+                new net.minecraft.resources.ResourceLocation("minecraft", "skins/test_player_skin");
+        net.minecraft.resources.ResourceLocation otherLoc =
+                new net.minecraft.resources.ResourceLocation("minecraft", "skins/other_player_skin");
+
+        java.lang.reflect.Field texCacheField =
+                com.nvidia.rtxremix.forge.entity.RemixEntitySubmitter.class.getDeclaredField("textureCache");
+        texCacheField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        java.util.Map<net.minecraft.resources.ResourceLocation, Long> textureCache =
+                (java.util.Map<net.minecraft.resources.ResourceLocation, Long>) texCacheField.get(submitter);
+
+        java.lang.reflect.Field matCacheField =
+                com.nvidia.rtxremix.forge.entity.RemixEntitySubmitter.class.getDeclaredField("materialCache");
+        matCacheField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        java.util.Map<Object, Long> materialCache =
+                (java.util.Map<Object, Long>) matCacheField.get(submitter);
+
+        textureCache.put(skinLoc, 1001L);
+        textureCache.put(otherLoc, 1002L);
+
+        Class<?>[] declaredClasses = com.nvidia.rtxremix.forge.entity.RemixEntitySubmitter.class.getDeclaredClasses();
+        Class<?> matKeyClass = null;
+        for (Class<?> cl : declaredClasses) {
+            if (cl.getSimpleName().equals("MaterialKey")) {
+                matKeyClass = cl;
+                break;
+            }
+        }
+        assertNotNull(matKeyClass, "MaterialKey inner record must exist");
+        java.lang.reflect.Constructor<?> matKeyCtor = matKeyClass.getDeclaredConstructors()[0];
+        matKeyCtor.setAccessible(true);
+
+        Object skinCutoutKey = matKeyCtor.newInstance(skinLoc, com.nvidia.rtxremix.forge.entity.RenderLayerUtils.SurfaceMode.CUTOUT);
+        Object skinOpaqueKey = matKeyCtor.newInstance(skinLoc, com.nvidia.rtxremix.forge.entity.RenderLayerUtils.SurfaceMode.OPAQUE);
+        Object otherKey = matKeyCtor.newInstance(otherLoc, com.nvidia.rtxremix.forge.entity.RenderLayerUtils.SurfaceMode.CUTOUT);
+
+        materialCache.put(skinCutoutKey, 2001L);
+        materialCache.put(skinOpaqueKey, 2002L);
+        materialCache.put(otherKey, 2003L);
+
+        submitter.invalidateSkinTexture(skinLoc);
+
+        assertFalse(textureCache.containsKey(skinLoc), "Invalidated skin texture must be removed from textureCache");
+        assertTrue(textureCache.containsKey(otherLoc), "Other textures must remain untouched");
+        assertEquals(1002L, textureCache.get(otherLoc));
+
+        assertFalse(materialCache.containsKey(skinCutoutKey), "Skin cutout material must be purged from materialCache");
+        assertFalse(materialCache.containsKey(skinOpaqueKey), "Skin opaque material must be purged from materialCache");
+        assertTrue(materialCache.containsKey(otherKey), "Other materials must remain untouched");
+        assertEquals(2003L, materialCache.get(otherKey));
+
+        submitter.invalidateSkinTexture(null);
+        submitter.invalidateSkinTexture(new net.minecraft.resources.ResourceLocation("minecraft", "unrelated"));
+        assertTrue(textureCache.containsKey(otherLoc));
+        assertTrue(materialCache.containsKey(otherKey));
+    }
+
+    @Test
     void testForgeNativeExtractorStagingBufferMerge(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir) throws java.io.IOException {
         java.nio.file.Path testConf = tempDir.resolve("test_rtx.conf");
         java.nio.file.Files.writeString(testConf, "rtx.dlfg.enable = True" + System.lineSeparator());
@@ -257,9 +326,29 @@ public class EntityPipelineTest {
         com.nvidia.rtxremix.forge.runtime.ForgeNativeExtractor.mergeCriticalConfigKeys(testConf);
 
         String updated = java.nio.file.Files.readString(testConf);
-        assertTrue(updated.contains("rtx.textureManager.stagingBufferSizeMiB = 256"), "Should merge staging buffer size");
-        assertTrue(updated.contains("dxvk.otherMemoryChunkSizeMB = 256"), "Should merge dxvk other memory chunk size");
+        assertTrue(updated.contains("rtx.textureManager.stagingBufferSizeMiB = 512"), "Should merge staging buffer size");
+        assertTrue(updated.contains("dxvk.otherMemoryChunkSizeMB = 512"), "Should merge dxvk other memory chunk size");
         assertTrue(updated.contains("rtx.reflex.mode = 2"), "Should merge reflex mode");
+
+        // Test upgrading previous smaller configuration (< 512)
+        java.nio.file.Path testLegacyConf = tempDir.resolve("legacy_rtx.conf");
+        java.nio.file.Files.writeString(testLegacyConf,
+                "rtx.textureManager.stagingBufferSizeMiB = 256" + System.lineSeparator() +
+                "dxvk.otherMemoryChunkSizeMB = 256" + System.lineSeparator());
+        com.nvidia.rtxremix.forge.runtime.ForgeNativeExtractor.mergeCriticalConfigKeys(testLegacyConf);
+        String upgraded = java.nio.file.Files.readString(testLegacyConf);
+        assertTrue(upgraded.contains("rtx.textureManager.stagingBufferSizeMiB = 512"), "Should upgrade legacy staging buffer size to 512");
+        assertTrue(upgraded.contains("dxvk.otherMemoryChunkSizeMB = 512"), "Should upgrade legacy chunk size to 512");
+
+        // Test preserving user-configured higher values (>= 512)
+        java.nio.file.Path testUserHigherConf = tempDir.resolve("user_higher_rtx.conf");
+        java.nio.file.Files.writeString(testUserHigherConf,
+                "rtx.textureManager.stagingBufferSizeMiB = 1024" + System.lineSeparator() +
+                "dxvk.otherMemoryChunkSizeMB = 1024" + System.lineSeparator());
+        com.nvidia.rtxremix.forge.runtime.ForgeNativeExtractor.mergeCriticalConfigKeys(testUserHigherConf);
+        String userHigher = java.nio.file.Files.readString(testUserHigherConf);
+        assertTrue(userHigher.contains("rtx.textureManager.stagingBufferSizeMiB = 1024"), "Should preserve user custom staging buffer size");
+        assertTrue(userHigher.contains("dxvk.otherMemoryChunkSizeMB = 1024"), "Should preserve user custom chunk size");
     }
 
     static class DummyCustomRenderType extends net.minecraft.client.renderer.RenderType {

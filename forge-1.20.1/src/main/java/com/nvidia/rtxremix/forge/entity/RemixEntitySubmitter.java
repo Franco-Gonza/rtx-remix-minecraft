@@ -698,18 +698,19 @@ public class RemixEntitySubmitter {
                 api.destroyTexture(texHandle);
             } catch (Exception ignored) {}
         }
-        materialCache.keySet().removeIf(k -> {
-            if (textureId.equals(k.textureId())) {
-                Long mat = materialCache.get(k);
+        Iterator<Map.Entry<MaterialKey, Long>> it = materialCache.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<MaterialKey, Long> entry = it.next();
+            if (textureId.equals(entry.getKey().textureId())) {
+                Long mat = entry.getValue();
                 if (mat != null && mat != 0 && mat != defaultWhiteMaterial) {
                     try {
                         api.destroyMaterial(mat);
                     } catch (Exception ignored) {}
                 }
-                return true;
+                it.remove();
             }
-            return false;
-        });
+        }
     }
 
     public void invalidateEntityMaterials(Object entity) {

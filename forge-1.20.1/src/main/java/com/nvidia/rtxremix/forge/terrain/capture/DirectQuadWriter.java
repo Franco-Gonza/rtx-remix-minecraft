@@ -323,14 +323,10 @@ public final class DirectQuadWriter {
                 stageCategory[i] = SectionMeshData.CAT_OVERLAY;
             } else if (isBlendedLayer(layer)) {
                 stageCategory[i] = SectionMeshData.CAT_TRANSLUCENT;
-            } else if (layerType == BlockTextureManager.L_CUTOUT || layerType == BlockTextureManager.L_CUTOUT_MIPPED) {
-                // NEVER demote cutout/cutout_mipped quads to solid! They require alpha testing
-                stageCategory[i] = SectionMeshData.CAT_CUTOUT;
-            } else if (sprite != null && sprite.hasTransparency()) {
-                // If a quad was marked solid by fallback, but its sprite has transparency, promote to cutout!
-                stageCategory[i] = SectionMeshData.CAT_CUTOUT;
-            } else {
+            } else if (layerType == solidType || (sprite != null && !sprite.hasTransparency())) {
                 stageCategory[i] = SectionMeshData.CAT_SOLID;
+            } else {
+                stageCategory[i] = SectionMeshData.CAT_CUTOUT;
             }
         }
     }
