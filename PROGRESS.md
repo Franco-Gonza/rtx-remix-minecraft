@@ -20,8 +20,8 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
 ## 2. Resultados de la Suite de Regresiones Automatizadas
 
 * **Estado de Ejecución:** `BUILD SUCCESSFUL` (13/13 tareas ejecutadas, 100% pass rate).
-* **Total Tests Ejecutados:** 49
-* **Total Aprobados:** 49 (100% pass rate)
+* **Total Tests Ejecutados:** 50
+* **Total Aprobados:** 50 (100% pass rate)
 * **Fallos / Errores / Omitidos:** 0 / 0 / 0
 * **Reporte HTML:** [index.html](file:///D:/proyectos/RTX%20MC%201.20.1/forge-1.20.1/build/reports/tests/test/index.html)
 * **Reportes XML:** [test-results](file:///D:/proyectos/RTX%20MC%201.20.1/forge-1.20.1/build/test-results/test)
@@ -32,7 +32,7 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
 | `AtlasAnimationForwarderTest` | 14 | 14 | 0 | 0 | 0 | 1.341s |
 | `BlockTextureAuditTest` | 8 | 8 | 0 | 0 | 0 | 0.146s |
 | `DragonWingMembraneTest` | 3 | 3 | 0 | 0 | 0 | 0.018s |
-| `EntityPipelineTest` | 15 | 15 | 0 | 0 | 0 | 0.104s |
+| `EntityPipelineTest` | 16 | 16 | 0 | 0 | 0 | 0.120s |
 | `LabPBRConverterTest` | 7 | 7 | 0 | 0 | 0 | 0.005s |
 | `CanonicalIndexBufferTest` | 2 | 2 | 0 | 0 | 0 | 0.012s |
 
@@ -40,6 +40,7 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
 
 ## 3. Historial de Commits Integrados
 
+* `f47244b` - `fix(entity): dynamically invalidate player skin material cache and increase texture staging buffer`
 * `649788c` - `fix(forge): configure dlfg.presentOnGraphicsQueue to false and synchronize sss pbr atlas forwarding`
 * `282c1bf` - `docs(qa): finalize Section 7 delivery documentation with 46 tests, Forge 47.4.29, and PBR multi-format sync`
 * `288bdbb` - `feat(forge): implement multi-channel PBR animation forwarding and off-heap buffer safety`
@@ -60,14 +61,16 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
 
 ## 4. Comparativa Exhaustiva: Antes vs Después (Por Subsistema)
 
-| Subsistema | Estado Inicial (Defecto / Bloqueo) | Estado Final (Fase 3-7, Goal 2 & Crashfix) | Impacto / Evidencia Técnica |
+| Subsistema | Estado Inicial (Defecto / Bloqueo) | Estado Final (Fase 3-7, Goal 2, Crashfix & Skin Invalidation) | Impacto / Evidencia Técnica |
 | :--- | :--- | :--- | :--- |
-| **A. Estabilidad GPU & DLFG** | GPU Crash (`0x60D0DEAD` / `VK_ERROR_DEVICE_LOST`) por `DLFG pacer: fence timed out` con `presentOnGraphicsQueue = True`. | `rtx.dlfg.presentOnGraphicsQueue = False`; presentación asíncrona dedicada en swapchain Vulkan. | Eliminado el deadlock de cola gráfica; estabilidad garantizada durante ráfagas de chunks (`649788c`). |
-| **B. Shading PBR & LabPBR** | Texturas sin normales ni rugosidad; superficies con reflejos especulares de espejo planos o mate uniforme. | `LabPBRConverter` completo: decodificación `_n`, `_s`, `_sss`, atlases PBR dinámicos vinculados a Remix y salvaguardas dieléctricas. | Superficies con micro-relieve táctil, rugosidad realista y POM (`displaceIn 0.25f`) sin efecto espejo (`2aa3f2c`, `288bdbb`). |
-| **C. Iluminación & Partículas** | Fuego y partículas sin emisión física; antorchas y fogatas diluidas en el muestreador ReSTIR. | Reglas de emisión analítica para `minecraft:fire`, campfires, y binding de canales emisivos en partículas de Remix. | Fuego y chispas proyectan luz dinámica cálida en tiempo real iluminando el entorno inmediato (`2aa3f2c`). |
-| **D. Book of Dragons (Alas)** | Membranas de alas de dragón invisibles o descartadas desde ciertos ángulos por culling de una sola cara; fragilidad ante reflexión. | `DragonWingMembraneHelper` con generación geométrica de doble cara, normales opuestas y reflexión robusta. | Alas de dragones completamente opacas y visibles desde cualquier perspectiva sin z-fighting (`18ae078`, `50a972f`). |
-| **E. Animaciones PBR Sidecar** | Texturas animadas (lava, fuego, portales) desincronizadas y riesgo de corrupción de memoria al tratar formatos R8 como RGBA8. | `AtlasAnimationForwarder` multi-formato con generación de parches dedicados R8 (1 bpp) y RGBA8 (4 bpp), incluyendo canales SSS. | Fluidez PBR animada continua sin saltos ni desalineaciones de normales en movimiento (`1c67a0e`, `288bdbb`, `649788c`). |
-| **F. DLSS, FG & Rendimiento** | Desincronización de motion vectors por `updateCamera(1.0f)`. BLAS invalidado por hashes aleatorios. | DLFG activo en cola asíncrona, Reflex Boost (2), motion vectors con delta real, y presupuesto progresivo (3.5ms). | 80–110 FPS en 3440x1417, cero ghosting, y estabilidad de frametimes sin microtirones. |
+| **A. Memoria de Texturas & Staging** | Flipbook de 160MB saturaba staging de 96MB forzando subida síncrona y provocando `VK_ERROR_DEVICE_LOST`. | Flipbook optimizado a 41.9MB (BC5, 6144x5120) y staging buffer ampliado a 256MB (`rtx.conf` y `user.conf`). | Subida asíncrona fluida sin bloqueos en el hilo de render ni desbordamientos de memoria (`f47244b`). |
+| **B. Materiales de Pieles de Jugador** | `materialCache` polucionado con `defaultWhiteTexture` por demoras/503 de Mojang Auth; pieles blancas/transparentes. | Lectura directa de `HttpTexture.file`, inclusión de `materialHandle` en `meshHash` e invalidación dinámica en render loop. | Pieles de jugador cargadas con textura real instantáneamente al estar disponibles en disco (`f47244b`). |
+| **C. Estabilidad GPU & DLFG** | GPU Crash (`0x60D0DEAD` / `VK_ERROR_DEVICE_LOST`) por `DLFG pacer: fence timed out` con `presentOnGraphicsQueue = True`. | `rtx.dlfg.presentOnGraphicsQueue = False`; presentación asíncrona dedicada en swapchain Vulkan. | Eliminado el deadlock de cola gráfica; estabilidad garantizada durante ráfagas de chunks (`649788c`). |
+| **D. Shading PBR & LabPBR** | Texturas sin normales ni rugosidad; superficies con reflejos especulares de espejo planos o mate uniforme. | `LabPBRConverter` completo: decodificación `_n`, `_s`, `_sss`, atlases PBR dinámicos vinculados a Remix y salvaguardas dieléctricas. | Superficies con micro-relieve táctil, rugosidad realista y POM (`displaceIn 0.25f`) sin efecto espejo (`2aa3f2c`, `288bdbb`). |
+| **E. Iluminación & Partículas** | Fuego y partículas sin emisión física; antorchas y fogatas diluidas en el muestreador ReSTIR. | Reglas de emisión analítica para `minecraft:fire`, campfires, y binding de canales emisivos en partículas de Remix. | Fuego y chispas proyectan luz dinámica cálida en tiempo real iluminando el entorno inmediato (`2aa3f2c`). |
+| **F. Book of Dragons (Alas)** | Membranas de alas de dragón invisibles o descartadas desde ciertos ángulos por culling de una sola cara; fragilidad ante reflexión. | `DragonWingMembraneHelper` con generación geométrica de doble cara, normales opuestas y reflexión robusta. | Alas de dragones completamente opacas y visibles desde cualquier perspectiva sin z-fighting (`18ae078`, `50a972f`). |
+| **G. Animaciones PBR Sidecar** | Texturas animadas (lava, fuego, portales) desincronizadas y riesgo de corrupción de memoria al tratar formatos R8 como RGBA8. | `AtlasAnimationForwarder` multi-formato con generación de parches dedicados R8 (1 bpp) y RGBA8 (4 bpp), incluyendo canales SSS. | Fluidez PBR animada continua sin saltos ni desalineaciones de normales en movimiento (`1c67a0e`, `288bdbb`, `649788c`). |
+| **H. DLSS, FG & Rendimiento** | Desincronización de motion vectors por `updateCamera(1.0f)`. BLAS invalidado por hashes aleatorios. | DLFG activo en cola asíncrona, Reflex Boost (2), motion vectors con delta real, y presupuesto progresivo (3.5ms). | 80–110 FPS en 3440x1417, cero ghosting, y estabilidad de frametimes sin microtirones. |
 
 ---
 
@@ -108,6 +111,8 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
 
 * **Archivo de Configuración Desplegado:** `packaging/rtx.conf` y sincronizado en `%APPDATA%/.minecraft/rtx.conf` y `user.conf`.
 * **Directivas Clave Verificadas:**
+  * `rtx.textureManager.stagingBufferSizeMiB = 256` (Staging buffer ampliado a 256MB).
+  * `dxvk.otherMemoryChunkSizeMB = 256` (Chunk size de memoria DXVK ampliado a 256MB).
   * `rtx.volumetrics.enable = True` (Froxels y niebla volumétrica activos).
   * `rtx.volumetrics.enableAtmosphere = True` (Dispersión atmosférica y God Rays solares/lunares reconciliados).
   * `rtx.volumetrics.atmosphereHeightMeters = 2000.0` (Altura de atmósfera calibrada).
@@ -123,8 +128,8 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
 
 ## 7. Artefactos de Entrega y Verificación
 
-1. **JAR Compilado:** [rtx-remix-forge-1.20.1-0.1.0.jar](file:///D:/proyectos/RTX%20MC%201.20.1/forge-1.20.1/build/libs/rtx-remix-forge-1.20.1-0.1.0.jar) (339.652 bytes, 15/11/2026 18:27:25).
-2. **JAR Desplegado en Minecraft:** [rtx-remix-forge-1.20.1-0.1.0.jar](file:///C:/Users/franc/AppData/Roaming/.minecraft/mods/rtx-remix-forge-1.20.1-0.1.0.jar) (SHA-256: `76F2744BAD7E0E03E8E48CEB5104CA7A9A4EEBEBA0A8EC007C0A8DB38D1CB5B5`).
+1. **JAR Compilado:** [rtx-remix-forge-1.20.1-0.1.0.jar](file:///D:/proyectos/RTX%20MC%201.20.1/forge-1.20.1/build/libs/rtx-remix-forge-1.20.1-0.1.0.jar) (341.503 bytes, 16/11/2026 11:02:29).
+2. **JAR Desplegado en Minecraft:** [rtx-remix-forge-1.20.1-0.1.0.jar](file:///C:/Users/franc/AppData/Roaming/.minecraft/mods/rtx-remix-forge-1.20.1-0.1.0.jar) (SHA-256: `3EDB4276226EB669FB0EFDD650F81ECD93A97740E7351040821BC7FCC29EE7F5`).
 3. **Dependencia Nativa:** [remixbridge.dll](file:///C:/Users/franc/AppData/Roaming/.minecraft/remix-sdk/remixbridge.dll) (910.336 bytes | SHA-256: `749A550EA395CE499AF7C813038B78FDF169F0FDDC2CF27D729ED21984D3E9F6`).
 4. **Mandato del Proyecto:** [GOAL_RTX_FORGE.md](file:///D:/proyectos/RTX%20MC%201.20.1/GOAL_RTX_FORGE.md).
 5. **Seguimiento de Progreso:** [PROGRESS.md](file:///D:/proyectos/RTX%20MC%201.20.1/PROGRESS.md).
@@ -136,10 +141,11 @@ Estado de avance, decisiones arquitectónicas, resultados de pruebas, métricas 
 
 | Criterio / Subsistema | Alcance Evaluado | Método de Verificación | Estado | Evidencia Concreta |
 | :--- | :--- | :--- | :---: | :--- |
-| **Arquitectura Forge & JDK 21** | Compilación, bytecode, Mixins y refmaps | Gradle Build & Test (13/13 tareas) | **APROBADO** | `BUILD SUCCESSFUL`, 49/49 tests pasando. |
+| **Arquitectura Forge & JDK 21** | Compilación, bytecode, Mixins y refmaps | Gradle Build & Test (13/13 tareas) | **APROBADO** | `BUILD SUCCESSFUL`, 50/50 tests pasando. |
 | **Unificación Forge 47.4.29** | Alineación de versión en build configs | Inspección de dependencias y TSrg | **APROBADO** | Forge 47.4.29 unificado en `build.gradle` (`e2d9f42`). |
 | **Interoperabilidad JNI & Off-heap** | `remixbridge.dll`, buffers directos 64B, `GlInterop` | Test unitario & hash binario | **APROBADO** | DLL SHA-256 coincide byte a byte (`749A550E...`). |
-| **Estabilidad GPU (TDR Prevention)** | Prevención de `VK_ERROR_DEVICE_LOST` | Auditoría de `rtx.conf` y swapchain | **APROBADO** | `rtx.dlfg.presentOnGraphicsQueue = False` desacoplado. |
+| **Estabilidad GPU (TDR & Staging)** | Staging 256MB y cola de presentación desacoplada | Auditoría de `rtx.conf` y swapchain | **APROBADO** | `stagingBufferSizeMiB = 256`, `presentOnGraphicsQueue = False`. |
+| **Invalidación Dinámica de Pieles** | Evitar polución de `materialCache` y recarga en disco | Unit test de `EntityPipelineTest` | **APROBADO** | `testDynamicSkinMaterialCacheInvalidation` passed (`f47244b`). |
 | **Configuración Runtime (rtx.conf)** | DLSS, DLFG, Reflex, Froxels, thinWall, atmósfera | Parser de strings en archivo activo | **APROBADO** | Reconciliación total en `%APPDATA%/.minecraft/rtx.conf`. |
 | **Vectores de Movimiento (DLSS/DLFG)** | Desacople de `updateCamera(1.0f)` y matriz reproyección | Auditoría de bytecode y AST Java | **APROBADO** | Cámara evaluada con delta temporal real en frame loop. |
 | **Topología y Buffers Dinámicos** | Primitivas `TRIANGLES`/`FAN`, expansión >16k | Unit tests de pipeline de entidad | **APROBADO** | `testCapturingConsumerDynamicResizeBeyond16384` passed. |
@@ -201,7 +207,7 @@ Para certificar de forma definitiva los puntos marcados como **NO VERIFICADO**, 
 * **Causa Raíz:** Capas `entityCutoutNoCull` y pieles de jugador mapeadas a mezcla translúcida sin escritura en buffer de profundidad (`depthWrite = false`).
 * **Archivos Modificados:** `RenderLayerUtils.java`, `RemixEntitySubmitter.java`, `EntityPipelineTest.java`.
 * **Solución Implementada:** Mapeo estricto a `SOLID_CUTOUT` para pieles y capas opacas de entidad, habilitación forzada de alpha test con umbral de 128, y depth write incondicional en mallas de entidades.
-* **Validación:** 15/15 tests aprobados en `EntityPipelineTest`.
+* **Validación:** 16/16 tests aprobados en `EntityPipelineTest`.
 
 ### Hotfix 3: Dragones de Book of Dragons Invisibles
 * **Commit:** `13d4e87`
@@ -209,7 +215,7 @@ Para certificar de forma definitiva los puntos marcados como **NO VERIFICADO**, 
 * **Causa Raíz:** FaunaEngine utiliza shaders y buffers incompatibles; `RemixEntityPass` descartaba vértices y cancelaba OpenGL sin entregar geometría a Remix.
 * **Archivos Modificados:** `FaunaRendererMixin.java`, `RemixEntityPass.java`, `RemixEntitySubmitter.java`, `RenderLayerUtils.java`, `rtxremix.mixins.json`, `EntityPipelineTest.java`.
 * **Solución Implementada:** Intercepción en `FaunaRendererMixin`, transformación a cubos de malla estándar con extracción directa de la textura base (`bookofdragons:textures/entity/genetics/<especie>/base.png`), y fallback de seguridad a OpenGL.
-* **Validación:** 15/15 tests aprobados en `EntityPipelineTest`.
+* **Validación:** 16/16 tests aprobados en `EntityPipelineTest`.
 
 ### Hotfix 4: Lava Opaca sin Brillo ni Emisión
 * **Commit:** `0afdcc5`
@@ -263,7 +269,7 @@ Para certificar de forma definitiva los puntos marcados como **NO VERIFICADO**, 
 
 * **Unificación de Forge:** Versión `47.4.29` estandarizada en todos los archivos de configuración y Gradle (`e2d9f42`).
 * **Reconciliación de rtx.conf:** Parámetros de atmósfera volumétrica sincronizados (`rtx.volumetrics.enableAtmosphere = True`, `atmosphereHeightMeters = 2000.0`, `froxelGridSizeDepth = 256.0`).
-* **Artefacto JAR Desplegado:** `rtx-remix-forge-1.20.1-0.1.0.jar` (339.652 bytes, SHA-256: `76F2744BAD7E0E03E8E48CEB5104CA7A9A4EEBEBA0A8EC007C0A8DB38D1CB5B5`).
+* **Artefacto JAR Desplegado:** `rtx-remix-forge-1.20.1-0.1.0.jar` (341.503 bytes, SHA-256: `3EDB4276226EB669FB0EFDD650F81ECD93A97740E7351040821BC7FCC29EE7F5`).
 * **Pull Request:** Rama `work/rtx-remix-forge-1.20.1` actualizada en GitHub con sincronización completa hacia PR #1.
 
 ---
@@ -275,4 +281,23 @@ Para certificar de forma definitiva los puntos marcados como **NO VERIFICADO**, 
 * **Solución Aplicada:**
   1. Configuración de `rtx.dlfg.presentOnGraphicsQueue = False` en `packaging/rtx.conf`, `run/rtx.conf` y sincronizado en `%APPDATA%/.minecraft/rtx.conf`. Esto permite que la presentación de DLFG opere en una cola Vulkan dedicada desacoplada de la carga gráfica.
   2. Implementación de forwarding multi-canal seguro para parches PBR de SSS en `AtlasAnimationForwarder` (`649788c`).
-* **Validación:** 49/49 tests pasando (100%), JAR compilado de 339.652 bytes desplegado en `.minecraft/mods/`.
+* **Validación:** 50/50 tests pasando (100%), JAR compilado de 341.503 bytes desplegado en `.minecraft/mods/`.
+
+---
+
+## 14. Optimización de Memoria de Staging y Corrección Dinámica de Pieles (f47244b)
+
+* **Commit:** `f47244b`
+* **Flipbook de Agua Rediseñado (41.9 MB):**
+  * La textura `water_normals_flipbook.dds` original de 160 MB superaba el buffer de staging de 96 MB de DXVK, forzando subidas síncronas con pausas en la GPU.
+  * Se regeneró a resolución 6144x5120 con compresión BC5 y 13 niveles mipmap, reduciendo su peso a **41.9 MB** (41.943.268 bytes) en `textures/`, `packaging/textures/` y `.minecraft/textures/`.
+* **Ampliación de Staging Buffer a 256 MB:**
+  * Se configuraron `rtx.textureManager.stagingBufferSizeMiB = 256` y `dxvk.otherMemoryChunkSizeMB = 256` en `packaging/rtx.conf`, `run/rtx.conf` y `.minecraft/user.conf`.
+  * Se integró auto-merge en [ForgeNativeExtractor.java](file:///D:/Proyectos/RTX%20MC%201.20.1/forge-1.20.1/src/main/java/com/nvidia/rtxremix/forge/runtime/ForgeNativeExtractor.java) para persistir estos límites automáticamente ante actualizaciones.
+* **Causa Raíz y Fix de Pieles de Jugador Transparentes / Blancas:**
+  * *Causa Raíz*: Ante latencia de red o errores 503 en los servidores de Mojang Auth, Minecraft asignaba inicialmente una textura temporal mientras descargaba la skin asíncronamente. `RemixEntitySubmitter` cacheaba el material de la skin con `defaultWhiteTexture` en `materialCache`. Al finalizar la descarga, el material quedaba polucionado y nunca se re-enlazaba con la skin real.
+  * *Solución*:
+    1. Lectura directa del archivo en disco desde `HttpTexture.file` una vez descargado.
+    2. Inclusión del `materialHandle` en el cálculo de `meshHash` para detectar cambios de material inmediatamente.
+    3. Invalidación dinámica de caché en `RemixEntitySubmitter` y `ForgeRemixRenderer` cuando la textura cambia de placeholder a la skin definitiva.
+* **Validación:** 16/16 tests pasando en `EntityPipelineTest` incluyendo `testDynamicSkinMaterialCacheInvalidation`. Total general: **50/50 tests pasando**.
